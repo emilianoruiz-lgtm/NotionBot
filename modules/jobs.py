@@ -1,0 +1,245 @@
+# modules/jobs.py
+import asyncio
+from datetime import datetime
+import aiohttp
+import Horarios
+from telegram.ext import CallbackContext
+
+import Config
+from modules.DayIN import DayIN
+from modules.DayOUT import DayOUT, DayOutEquipo
+from modules.Burn import burndown, newday
+from modules.RDs import RDs_comments
+from modules.Agenda import generar_resumen_manana
+from modules.Ranking import RankingELO
+from modules.mundopizza.menump import get_menu_text
+from modules.AgendaSemProx import AgendaPlAdminSemanaSiguiente
+
+# --- Zona horaria ---
+from zoneinfo import ZoneInfo
+TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+
+
+def is_weekday(date_to_check: datetime) -> bool:
+    return date_to_check.weekday() in (0, 1, 2, 3, 4)
+
+
+
+# ============================
+# JOB DAYIN
+# ============================
+async def job_dayin(context: CallbackContext):
+    print("📤 job_dayin disparado a las", datetime.now(TZ))
+    try:
+        resultado = await DayIN()
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_DEBUG,
+            text=f"[DayIN automático realizado]\n{resultado}",
+            parse_mode="HTML"
+        )
+        print("📤 DayIN automático enviado")
+    except Exception as e:
+        print(f"❌ Error en job_dayin: {e}")
+
+
+# ============================
+# JOB DAYOUT
+# ============================
+async def job_dayout(context: CallbackContext):
+    print("📤 job_dayout disparado a las", datetime.now(TZ))
+    try:
+        resultado = await DayOUT()
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_LOG,
+            text=f"[DayOUT automático]\n{resultado}",
+            parse_mode="HTML"
+        )
+        print("📤 DayOUT automático enviado")
+    except Exception as e:
+        print(f"❌ Error en job_dayout: {e}")
+
+# ============================
+# JOB BURN
+# ============================
+async def job_burn(context: CallbackContext):
+    print("🔥 Ejecutando job_burn", datetime.now(TZ))
+    resultado = await burndown()
+    if resultado:
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_DEBUG,
+            text=str(resultado),
+            parse_mode="HTML"
+        )
+
+# ============================
+# JOB NEWDAY
+# ============================
+async def job_newday(context: CallbackContext):
+    print("📤 job_newday disparado a las", datetime.now(TZ))
+    resultado = await newday()
+    if resultado:
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_DEBUG,
+            text=str(resultado),
+            parse_mode="HTML"
+        )
+
+# ============================
+# JOB RD
+# ============================
+
+async def job_rd(context: CallbackContext):
+    print("📤 job_rd disparado a las", datetime.now(TZ))
+    resultado = await RDs_comments(concatenado=False)
+    if resultado:
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_LOG,
+            text=str(resultado),
+            parse_mode="HTML"
+        )
+
+# ============================
+# JOB AGENDA PRELIMINAR
+# ============================
+async def job_agenda_preliminar(context: CallbackContext):
+    ahora = datetime.now(TZ)
+
+    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
+        print(f"⚠ Prelim. agenda mañana no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
+        return
+
+    try:
+        print(f"📤 job_agenda_preliminar disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
+        resultado = await generar_resumen_manana()
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_LOG,
+            text=f"[Agenda Preliminar]\n{resultado}",
+            parse_mode="HTML"
+        )
+        print("📤 Mensaje de Agenda Preliminar enviado")
+    except Exception as e:
+        print(f"❌ Error en job_agenda_preliminar: {e}")
+
+# ============================
+# JOB AGENDA AUTOMÁTICA
+# ============================
+async def job_agenda_automatica(context: CallbackContext):
+    ahora = datetime.now(TZ)
+
+    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
+        print(f"⚠️[DEBUG] Agenda automática no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
+        return
+
+    try:
+        print(f"📤 job_agenda_automatica disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
+        resultado = await generar_resumen_manana()
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_EPROC,
+            text=f"{resultado}",
+            parse_mode="HTML"
+        )
+        print("📤 Mensaje de Agenda automática enviado")
+    except Exception as e:
+        print(f"❌ Error en job_agenda_automatica: {e}")
+
+# ============================
+# JOB AGENDA SEM PROX
+# ============================
+async def job_agenda_semana_prox(context: CallbackContext):
+    ahora = datetime.now(TZ)
+
+    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
+        print(f"⚠️[DEBUG] Agenda automática no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
+        return
+
+    try:
+        print(f"📤 job_agenda_semana_prox disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
+        resultado = await AgendaPlAdminSemanaSiguiente()
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_EPROC,
+            text=f"{resultado}",
+            parse_mode="HTML"
+        )
+        print("📤 Mensaje de Agenda automática enviado")
+    except Exception as e:
+        print(f"❌ Error en job_agenda_semana_prox: {e}")
+
+
+# ============================
+# JOB FOOD REMINDER
+# ============================
+async def job_food(context: CallbackContext):
+    ahora = datetime.now(TZ)
+
+    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
+        print(f"⚠️[DEBUG] food no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
+        return
+
+    try:
+        print(f"📤 job_food disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Primer mensaje: recordatorio
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_TEAM,
+            text="¡Acuérdense de pedir comida!!",
+            parse_mode="HTML"
+        )
+        print("📤 Mensaje de food reminder enviado")
+
+        # Segundo mensaje: menú
+        menu_text = get_menu_text()
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_TEAM,
+            text=menu_text,
+            parse_mode="HTML"
+        )
+        print("📤 Menú enviado")
+        
+    except Exception as e:
+        print(f"❌ Error en job_food: {e}")
+
+# ============================
+# JOB PAY REMINDER
+# ============================
+async def job_pay(context: CallbackContext):
+    ahora = datetime.now(TZ)
+
+    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
+        print(f"⚠️[DEBUG] pay no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
+        return
+
+    try:
+        print(f"📤 job_pay disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_TEAM,
+            text=f"Acuerdensé de pagar la comida 💵!",
+            parse_mode="HTML"
+        )
+        print("📤 Mensaje de pay reminder enviado")
+    except Exception as e:
+        print(f"❌ Error en job_pay: {e}")
+
+
+# ============================
+# JOB RANK REMINDER
+# ============================
+async def job_rank(context: CallbackContext):
+    ahora = datetime.now(TZ)
+
+    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
+        print(f"⚠️[DEBUG] rank no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
+        return
+
+    try:
+        print(f"📤 job_rank disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
+        resultado = await RankingELO()
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_TEAM,
+            text=f"{resultado}",
+            parse_mode="HTML"
+        )
+        print("📤 Mensaje de rank reminder enviado")
+    except Exception as e:
+        print(f"❌ Error en job_rank: {e}")
+
+
