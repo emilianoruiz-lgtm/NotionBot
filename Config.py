@@ -95,7 +95,7 @@ ALIAS_PERSONAS = {
 FERIADOS = {
     date(2025, 1, 1), date(2025, 3, 24), date(2025, 5, 1),
     date(2025, 5, 25), date(2025, 6, 20), date(2025, 7, 9),date(2025, 10, 10),
-    date(2025, 12, 25)
+    date(2025, 12, 25), 
 }
 
 FRASES_VARIADAS = [

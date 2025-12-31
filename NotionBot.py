@@ -49,7 +49,7 @@ run_as_admin()
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup,Update, InputFile
 from telegram.constants import ParseMode
-from telegram.error import RetryAfter
+from telegram.error import RetryAfter,NetworkError, TimedOut
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -114,6 +114,19 @@ from modules.sethorario import conv_sethorario, TAREAS_MAP
 # Zona horaria Argentina
 ahora = datetime.now(TZ)
 #print(f"Día de la semana {ahora.weekday()}")  # 0=Lunes, 6=Domingo
+
+
+
+async def error_handler(update, context):
+    err = context.error
+
+    if isinstance(err, (NetworkError, TimedOut)):
+        # Error típico de Telegram / red
+        print("⚠️ Error de red con Telegram. Reintentando...")
+        return
+
+    # Otros errores
+    print("❌ Error no controlado:", err)
 
 
 
@@ -924,7 +937,7 @@ if __name__ == "__main__":
     sync_system_time()
 
     app = Application.builder().token(Config.TELEGRAM_TOKEN).build()
-
+    app.add_error_handler(error_handler)
 
     # Configurar handlers
     app.add_handler(conv_equipos)
@@ -958,9 +971,6 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("curva_zorro", wrap_handler(curva_parcial_zorro)))
     app.add_handler(MessageHandler(filters.Document.PDF, manejar_pdf))
 
-
-
-
     app.add_handler(CommandHandler("ChatID", chatid))
 
 
@@ -974,7 +984,7 @@ if __name__ == "__main__":
         (job_burn, Horarios.hora_burn3, "Tercer burn del día"),
         (job_agenda_preliminar, Horarios.hora_agenda_pre, "Prelim. agenda mañana"),
         (job_agenda_automatica, Horarios.hora_agenda, "Agenda de mañana"),
-        (job_agenda_semana_prox, Horarios.hora_agenda, "Agenda semana prox"),     
+        (job_agenda_semana_prox, Horarios.hora_agenda_sem, "Agenda semana prox"),     
         (job_burn, Horarios.hora_burn4, "Último burn del día"),
         (job_dayout, Horarios.hora_dayout, "DayOut automático"),
         (job_newday, Horarios.hora_newday, "Nuevos registros"),
@@ -1014,7 +1024,11 @@ if __name__ == "__main__":
     )
 
     print(f"🤖 Bot corriendo... Hora actual: {datetime.now(TZ).strftime('%H:%M:%S')} ({TZ})")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.run_polling(
+        allowed_updates=Update.ALL_TYPES
+        drop_pending_updates=True
+        )
+
     print(f"🧾 Jobs en JobQueue al finalizar schedule: {len(jobs)}")
     for j in jobs:
         print(f" - job.name={j.name}, next_run={getattr(j, 'next_t', 'unknown')}")

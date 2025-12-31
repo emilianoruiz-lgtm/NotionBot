@@ -23,7 +23,8 @@ TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 def is_weekday(date_to_check: datetime) -> bool:
     return date_to_check.weekday() in (0, 1, 2, 3, 4)
 
-
+def is_friday(date_to_check: datetime) -> bool:
+    return date_to_check.weekday() == 4
 
 # ============================
 # JOB DAYIN
@@ -148,8 +149,11 @@ async def job_agenda_automatica(context: CallbackContext):
 async def job_agenda_semana_prox(context: CallbackContext):
     ahora = datetime.now(TZ)
 
-    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
-        print(f"⚠️[DEBUG] Agenda automática no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
+    if not is_friday(ahora) or ahora.date() in Config.FERIADOS:
+        print(
+            f"⚠️[DEBUG] Agenda semana prox no ejecutada: "
+            f"hoy ({ahora.strftime('%Y-%m-%d')}) no es viernes o es feriado."
+        )
         return
 
     try:
