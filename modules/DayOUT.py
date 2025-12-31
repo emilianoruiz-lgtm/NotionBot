@@ -445,13 +445,17 @@ async def DayOutEquipo(session, equipo_objetivo):
         mensaje_analisis_short = mensaje_analisis + "------------------------------------------------\n🧐 Tareas finalizadas hoy:\n"
         mensaje_analisis_short_notion = mensaje_analisis + "------------------------------------------------\n🧐 Tareas finalizadas hoy:\n"
 
-        for resp, tareas in tareas_por_responsable.items():
-            mensaje_analisis_short += f"\n{resp}:\n"
-            mensaje_analisis_short_notion += f"\n{resp}:\n"
-            for texto, link, fibs in tareas:
-                fib_label = "FIB" if fibs == 1 else "FIBS"
-                mensaje_analisis_short += f"       • {fibs} {fib_label}<a href='{link}'> {texto}</a>\n"
-                mensaje_analisis_short_notion += f"       • {fibs} {fib_label} {texto}\n"
+        if not tareas_por_responsable:
+            mensaje_analisis_short += "Sin tareas cerradas hoy\n"
+            mensaje_analisis_short_notion += "Sin tareas cerradas hoy\n"
+        else:
+            for resp, tareas in tareas_por_responsable.items():
+                mensaje_analisis_short += f"\n{resp}:\n"
+                mensaje_analisis_short_notion += f"\n{resp}:\n"
+                for texto, link, fibs in tareas:
+                    fib_label = "FIB" if fibs == 1 else "FIBS"
+                    mensaje_analisis_short += f"       • {fibs} {fib_label}<a href='{link}'> {texto}</a>\n"
+                    mensaje_analisis_short_notion += f"       • {fibs} {fib_label} {texto}\n"
 
 
         # añadimos el análisis al mensaje para Notion
