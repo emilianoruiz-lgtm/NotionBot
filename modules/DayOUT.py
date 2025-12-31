@@ -414,23 +414,21 @@ async def DayOutEquipo(session, equipo_objetivo):
             mensaje_analisis += "------------------------------------------------\n📊 Estimación vs Realidad\n      • {cant_integrantes} Personas | Día: {day_number_val}\n"
             mensaje_analisis += f"      • Vel. Sprint anterior: {ultima_velocidad}\n"
             mensaje_analisis += f"      • FIBS esperados: {fibs_esperados:.2f} \n      • FIBS cerrados: {registro_total_fibs_done}\n\n"
-
-
-        # (mismo código de evaluación de velocidad que ya tenías...)
-        if registro_total_fibs_done >= fibs_esperados * 1.1:
-            mensaje_analisis += "Vel: +110% 🔥😎 Excelente!\n"
-        elif registro_total_fibs_done >= fibs_esperados:
-            mensaje_analisis += "Vel: 100-110% ☺️ Muy bien!\n"
-        elif registro_total_fibs_done >= fibs_esperados * 0.85:
-            mensaje_analisis += "Vel: 85-100% 🙂\n"
-        elif registro_total_fibs_done >= fibs_esperados * 0.7:
-            mensaje_analisis += "Vel: 70-85% 😐 Meehhh \n"
-        elif registro_total_fibs_done >= fibs_esperados * 0.6:
-            mensaje_analisis += "Vel: 60-70% 🙃 Baja velocidad\n"
-        elif registro_total_fibs_done >= fibs_esperados * 0.5:
-            mensaje_analisis += "Vel: 50-60% 😖 Muy baja velocidad\n"
-        else:
-            mensaje_analisis += "Vel: -50% 🚨☠️ Problemas!\n"
+            # (mismo código de evaluación de velocidad que ya tenías...)
+            if registro_total_fibs_done >= fibs_esperados * 1.1:
+                mensaje_analisis += "Vel: +110% 🔥😎 Excelente!\n"
+            elif registro_total_fibs_done >= fibs_esperados:
+                mensaje_analisis += "Vel: 100-110% ☺️ Muy bien!\n"
+            elif registro_total_fibs_done >= fibs_esperados * 0.85:
+                mensaje_analisis += "Vel: 85-100% 🙂\n"
+            elif registro_total_fibs_done >= fibs_esperados * 0.7:
+                mensaje_analisis += "Vel: 70-85% 😐 Meehhh \n"
+            elif registro_total_fibs_done >= fibs_esperados * 0.6:
+                mensaje_analisis += "Vel: 60-70% 🙃 Baja velocidad\n"
+            elif registro_total_fibs_done >= fibs_esperados * 0.5:
+                mensaje_analisis += "Vel: 50-60% 😖 Muy baja velocidad\n"
+            else:
+                mensaje_analisis += "Vel: -50% 🚨☠️ Problemas!\n"
 
         tareas_por_responsable = defaultdict(list)
         for line, fibs in done_today_overall:
@@ -637,22 +635,20 @@ async def DayOutTest(update, session, equipo_objetivo):
             mensaje_analisis += "------------------------------------------------\n📊 Estimación vs Realidad\n      • {cant_integrantes} Personas | Día: {day_number_val}\n"
             mensaje_analisis += f"      • Vel. Sprint anterior: {ultima_velocidad}\n"
             mensaje_analisis += f"      • FIBS esperados: {fibs_esperados:.2f} \n      • FIBS cerrados: {registro_total_fibs_done}\n\n"
-
-
-        if registro_total_fibs_done >= fibs_esperados * 1.1:
-            mensaje_analisis += "Vel: +110% 🔥😎 Excelente!\n"
-        elif registro_total_fibs_done >= fibs_esperados:
-            mensaje_analisis += "Vel: 100-110% ☺️ Muy bien!\n"
-        elif registro_total_fibs_done >= fibs_esperados * 0.85:
-            mensaje_analisis += "Vel: 85-100% 🙂\n"
-        elif registro_total_fibs_done >= fibs_esperados * 0.7:
-            mensaje_analisis += "Vel: 70-85% 😐 Meehhh \n"
-        elif registro_total_fibs_done >= fibs_esperados * 0.6:
-            mensaje_analisis += "Vel: 60-70% 🙃 Baja velocidad\n"
-        elif registro_total_fibs_done >= fibs_esperados * 0.5:
-            mensaje_analisis += "Vel: 50-60% 😖 Muy baja velocidad\n"
-        else:
-            mensaje_analisis += "Vel: -50% 🚨☠️ Problemas!\n"
+            if registro_total_fibs_done >= fibs_esperados * 1.1:
+                mensaje_analisis += "Vel: +110% 🔥😎 Excelente!\n"
+            elif registro_total_fibs_done >= fibs_esperados:
+                mensaje_analisis += "Vel: 100-110% ☺️ Muy bien!\n"
+            elif registro_total_fibs_done >= fibs_esperados * 0.85:
+                mensaje_analisis += "Vel: 85-100% 🙂\n"
+            elif registro_total_fibs_done >= fibs_esperados * 0.7:
+                mensaje_analisis += "Vel: 70-85% 😐 Meehhh \n"
+            elif registro_total_fibs_done >= fibs_esperados * 0.6:
+                mensaje_analisis += "Vel: 60-70% 🙃 Baja velocidad\n"
+            elif registro_total_fibs_done >= fibs_esperados * 0.5:
+                mensaje_analisis += "Vel: 50-60% 😖 Muy baja velocidad\n"
+            else:
+                mensaje_analisis += "Vel: -50% 🚨☠️ Problemas!\n"
 
         tareas_por_responsable = defaultdict(list)
         for line, fibs in done_today_overall:
