@@ -20,7 +20,7 @@ import win32api
 import win32con
 
 import re
-
+from functools import wraps
 import traceback
 import time as _time
 from modules.CurvaParcial import generar_curva_parcial, generar_curva_parcial_equipo
@@ -929,6 +929,19 @@ async def chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🧵 Este mensaje no está dentro de un thread."
         )
 
+def skip_if_feriado(job_func):
+    @wraps(job_func)
+    async def wrapper(context):
+        hoy = datetime.now(Config.ARG_TZ).date()
+
+        if hoy in Config.FERIADOS:
+            print(f"⛔ {job_func.__name__} NO ejecutado ({hoy} feriado)")
+            return
+
+        await job_func(context)
+
+    return wrapper
+
 if __name__ == "__main__":
     print("🚀 Iniciando ZzRun247v5.2.py ...")
 
@@ -977,20 +990,20 @@ if __name__ == "__main__":
 
     # Programar todos los jobs
     jobs_to_schedule = [
-        (job_dayin, Horarios.hora_dayin, "DayIN automático"),
-        (job_rd, Horarios.hora_rd, "Comentarios RD"),
-        (job_burn, Horarios.hora_burn1, "Primer burn del día"),
-        (job_burn, Horarios.hora_burn2, "Segundo burn del día"),
-        (job_burn, Horarios.hora_burn3, "Tercer burn del día"),
-        (job_agenda_preliminar, Horarios.hora_agenda_pre, "Prelim. agenda mañana"),
-        (job_agenda_automatica, Horarios.hora_agenda, "Agenda de mañana"),
-        (job_agenda_semana_prox, Horarios.hora_agenda_sem, "Agenda semana prox"),     
-        (job_burn, Horarios.hora_burn4, "Último burn del día"),
-        (job_dayout, Horarios.hora_dayout, "DayOut automático"),
-        (job_newday, Horarios.hora_newday, "Nuevos registros"),
-        (job_food, Horarios.hora_food, "Food reminder"),
+        (skip_if_feriado(job_dayin), Horarios.hora_dayin, "DayIN automático"),
+        (skip_if_feriado(job_rd), Horarios.hora_rd, "Comentarios RD"),
+        (skip_if_feriado(job_burn), Horarios.hora_burn1, "Primer burn del día"),
+        (skip_if_feriado(job_burn), Horarios.hora_burn2, "Segundo burn del día"),
+        (skip_if_feriado(job_burn), Horarios.hora_burn3, "Tercer burn del día"),
+        (skip_if_feriado(job_agenda_preliminar), Horarios.hora_agenda_pre, "Prelim. agenda mañana"),
+        (skip_if_feriado(job_agenda_automatica), Horarios.hora_agenda, "Agenda de mañana"),
+        (skip_if_feriado(job_agenda_semana_prox), Horarios.hora_agenda_sem, "Agenda semana prox"),     
+        (skip_if_feriado(job_burn), Horarios.hora_burn4, "Último burn del día"),
+        (skip_if_feriado(job_dayout), Horarios.hora_dayout, "DayOut automático"),
+        (skip_if_feriado(job_newday), Horarios.hora_newday, "Nuevos registros"),
+        (skip_if_feriado(job_food), Horarios.hora_food, "Food reminder"),
         # (job_rank, Horarios.hora_rank, "Rank reminder"),
-        (job_pay, Horarios.hora_pay, "Pay reminder"),
+        (skip_if_feriado(job_pay), Horarios.hora_pay, "Pay reminder"),
     ]
 
     app.job_queue.set_application(app)  
