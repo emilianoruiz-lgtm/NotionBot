@@ -1039,7 +1039,6 @@ if __name__ == "__main__":
     print(f"🤖 Bot corriendo... Hora actual: {datetime.now(TZ).strftime('%H:%M:%S')} ({TZ})")
     app.run_polling(
         allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True
         )
 
     print(f"🧾 Jobs en JobQueue al finalizar schedule: {len(jobs)}")
