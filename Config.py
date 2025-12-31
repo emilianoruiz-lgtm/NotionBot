@@ -93,9 +93,28 @@ ALIAS_PERSONAS = {
 
 # Lista de feriados (ejemplo, completala según tu caso)
 FERIADOS = {
+    # Feriados 2025 (ya existentes)
     date(2025, 1, 1), date(2025, 3, 24), date(2025, 5, 1),
-    date(2025, 5, 25), date(2025, 6, 20), date(2025, 7, 9),date(2025, 10, 10),
-    date(2025, 12, 25), 
+    date(2025, 5, 25), date(2025, 6, 20), date(2025, 7, 9),
+    date(2025, 10, 10), date(2025, 12, 25),
+    
+    # Feriados de Argentina 2026 🇦🇷
+    date(2026, 1, 1),   # Año Nuevo
+    date(2026, 2, 16),  # Lunes de Carnaval
+    date(2026, 2, 17),  # Martes de Carnaval
+    date(2026, 3, 24),  # Día Nacional de la Memoria por la Verdad y la Justicia
+    date(2026, 4, 2),   # Día del Veterano y de los Caídos en la Guerra de Malvinas (y opcional Jueves Santo)
+    date(2026, 4, 3),   # Viernes Santo
+    date(2026, 5, 1),   # Día del Trabajador
+    date(2026, 5, 25),  # Día de la Revolución de Mayo
+    date(2026, 6, 17),  # Día del Paso a la Inmortalidad del General Martín Miguel de Güemes
+    date(2026, 6, 20),  # Día de la Bandera
+    date(2026, 7, 9),   # Día de la Independencia
+    date(2026, 8, 17),  # Día del Paso a la Inmortalidad del General José de San Martín
+    date(2026, 10, 12), # Día del Respeto por la Diversidad Cultural
+    date(2026, 11, 23), # Día de la Soberanía Nacional
+    date(2026, 12, 8),  # Día de la Inmaculada Concepción
+    date(2026, 12, 25), # Navidad
 }
 
 FRASES_VARIADAS = [
