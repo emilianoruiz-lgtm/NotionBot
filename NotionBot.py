@@ -942,6 +942,9 @@ def skip_if_feriado(job_func):
 
     return wrapper
 
+async def ping(update, context):
+    await update.message.reply_text("🏓 pong")
+
 if __name__ == "__main__":
     print("🚀 Iniciando ZzRun247v5.2.py ...")
 
@@ -986,7 +989,7 @@ if __name__ == "__main__":
 
     app.add_handler(CommandHandler("ChatID", chatid))
 
-
+    app.add_handler(CommandHandler("ping", ping))
 
     # Programar todos los jobs
     jobs_to_schedule = [
