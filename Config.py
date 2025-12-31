@@ -53,6 +53,34 @@ TASK_FIELDS = [
     "SIDERSA (BD)", "TPR (BD)", "WIENER LAB (BD)"
     ]
 
+EQUIPOS_CONFIG = {
+    "General": {
+        "emoji": "📌",
+        "display_name": "General",
+    },
+    "No inicia jornada en la oficina": {
+        "emoji": "📍",
+        "display_name": "No inicia jornada\n        en la oficina",
+    },
+    "Huemules": {
+        "emoji": "🫎",
+        "display_name": "Huemules",
+    },
+    "Zorros": {
+        "emoji": "🦊",
+        "display_name": "Zorros",
+    },
+    "Caimanes": {
+        "emoji": "🐊",
+        "display_name": "Caimanes",
+    },
+}
+
+# Defaults
+DEFAULT_TEAM_EMOJI = "🤌"
+DEFAULT_SEPARATOR = "-" * 46
+NO_REGISTROS_TEXT = "      - No hay registros"
+
 EQUIPOS = ["Caimanes", "Zorros", "Huemules"]
 
 # Emojis por equipo

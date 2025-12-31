@@ -9,6 +9,14 @@ import Config
 fecha_manana_dt = datetime.now(Config.ARG_TZ) + timedelta(days=1)
 fecha_manana = fecha_manana_dt.strftime('%d-%m-%Y')
 
+
+def get_team_config(equipo):
+    cfg = Config.EQUIPOS_CONFIG.get(equipo, {})
+    return (
+        cfg.get("emoji", Config.DEFAULT_TEAM_EMOJI),
+        cfg.get("display_name", equipo),
+    )
+
 # --- FUNCIONES NOTION ---
 def get_registros_manana_calendar():
     """Obtiene los registros que incluyen el día de mañana desde Notion"""
@@ -201,26 +209,23 @@ def resumen_calendar(registros):
                       [e for e in equipos_dict if e not in ["No inicia jornada en la oficina", "General"]] + \
                       ["General"]
 
-    # --- Construcción del resumen ---
+    #  --- Construcción del resumen ---
     for equipo in apartados_orden:
         regs = equipos_dict[equipo]
-        if equipo == "General":
-            emojiteam = "📌"
-            nombre_mostrar = equipo
-        elif equipo == "No inicia jornada en la oficina":
-            emojiteam = "📍"
-            nombre_mostrar = "No inicia jornada\n        en la oficina"
-        else:
-            emojiteam = {"Huemules": "🫎", "Zorros": "🦊", "Caimanes": "🐊"}.get(equipo, "🤌")
-            nombre_mostrar = equipo
 
-        resumen_lines.append(f"\n<b>{emojiteam} {nombre_mostrar}</b>\n----------------------------------------------")
+        team_cfg = Config.EQUIPOS_CONFIG.get(equipo, {})
+        emojiteam, nombre_mostrar = get_team_config(equipo)
+
+        resumen_lines.append(
+            f"\n<b>{emojiteam} {nombre_mostrar}</b>\n{Config.DEFAULT_SEPARATOR}"
+        )
+
         if regs:
             regs.sort(key=fecha_inicio)
             for r in regs:
                 resumen_lines.append(format_linea(r))
         else:
-            resumen_lines.append("      - No hay registros")
+            resumen_lines.append(Config.NO_REGISTROS_TEXT)
 
     return "\n".join(resumen_lines)
 
