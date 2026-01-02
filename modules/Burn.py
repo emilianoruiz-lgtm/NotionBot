@@ -174,7 +174,6 @@ def actualizar_fibact(plan_id):
     # Devuelvo también el estado del plan (puede ser None)
     return total_fib, fibact_anterior, plan_title, plan_estado
 
-
 # --- ACTUALIZAR PARCIAL CORRECTAMENTE EN RD --- 
 def actualizar_parcial(rd_registro):
     props_rd = rd_registro.get("properties", {})
@@ -248,6 +247,7 @@ def actualizar_parcial(rd_registro):
 
     resumen = "\n".join(resumen_planes + [resumen_parcial])
     return resumen, total_parcial
+
 def actualizar_cant_integrantes(rd_registro, equipo):
     """
     Actualiza en Notion la cantidad de integrantes según el equipo.
@@ -277,8 +277,6 @@ def actualizar_cant_integrantes(rd_registro, equipo):
                              headers=Config.HEADERS, json=payload)
     print(f"[DEBUG] RD {rd_registro['id']} → Cant. Integrantes {cant_anterior} → {cantidad}, resp={r_patch.status_code}")
 
-
-# --- BURNDOWN CORREGIDO (solo enviar si hay cambios) ---
 async def burndown():
     registros = get_registros_hoy()  # estos son RD
     equipos_procesados = set()
@@ -310,10 +308,6 @@ async def burndown():
 
     print("✅ Burndown finalizado")
     return equipos_procesados
-
-
-
-
 
 def copiar_bloques_recursivo_completo(orig_id, target_id):
     r = requests.get(f"https://api.notion.com/v1/blocks/{orig_id}/children", headers=Config.HEADERS)
@@ -351,7 +345,6 @@ def copiar_bloques_recursivo_completo(orig_id, target_id):
             nuevo_bloque_id = post.json()['results'][0]['id']
             copiar_bloques_recursivo_completo(bloque['id'], nuevo_bloque_id)
 
-
 def agregar_comentario_notion(page_id, texto):
     payload = {
         "parent": {"page_id": page_id},
@@ -362,7 +355,6 @@ def agregar_comentario_notion(page_id, texto):
         print(f"Comentario agregado a la página {page_id}")
     else:
         print(f"Error agregando comentario a la página {page_id}:", response.text)
-
 
 def duplicar_registro_completo(registro):
     propiedades_orig = registro['properties']
@@ -417,7 +409,6 @@ def duplicar_registro_completo(registro):
     print("Registro duplicado con todo el contenido:", nueva_page_id)
     return nueva_pagina, equipo_select
 
-# --- TELEGRAM ---
 async def enviar_a_telegram(mensaje_html, equipo: str):
     print(f"Enviando comentario a Telegram para {equipo}...")
     bot = Bot(token=Config.TELEGRAM_TOKEN)
@@ -435,9 +426,6 @@ async def enviar_a_telegram(mensaje_html, equipo: str):
             )
     except Exception as e:
         print("Error enviando mensaje a Telegram:", e)
-
-
-
 
 def actualizar_type_spc(registro):
     propiedades = {"Type": {"multi_select": [{"name": "SPC"}]}}
@@ -480,6 +468,7 @@ async def newday():
 
 
         # --- NUEVA FUNCIÓN LISTADO DE PLANES ---
+
 async def listar_planes():
     registros = get_registros_hoy()  # RDs del día actual
     mensajes_por_equipo = {}
