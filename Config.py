@@ -1,5 +1,58 @@
-from datetime import date
+# ==========================================
+# 1. IMPORTS
+# ==========================================
+
+# Librerías Estándar
+import asyncio
+import ctypes
+import html
+import inspect
+import json
+import logging
+import os
+import re
+import subprocess
+import sys
+import traceback
+import warnings
+import aiohttp
+import requests
+import time as _time
+import unicodedata
+import dateutil.parser  
+import base64
+
+from collections import defaultdict
+from datetime import datetime, timedelta, date, time, timezone
+from functools import wraps
+from math import ceil
 from zoneinfo import ZoneInfo
+from pathlib import Path
+
+# Librerías de Terceros
+import ntplib
+import tzdata
+import win32api
+import win32con
+import pdfplumber
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputFile, Bot
+from telegram.constants import ParseMode
+from telegram.error import RetryAfter, NetworkError, TimedOut
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ConversationHandler,
+    filters,
+    ContextTypes,
+    JobQueue,
+    CallbackContext
+)
+
+
+
+
 
 ARG_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 

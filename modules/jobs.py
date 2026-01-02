@@ -1,10 +1,8 @@
-# modules/jobs.py
-import asyncio
-from datetime import datetime
-import aiohttp
-import Horarios
-from telegram.ext import CallbackContext
+# ==========================================
+# 1. IMPORTS
+# ==========================================
 
+# Módulos Locales
 import Config
 from modules.DayIN import DayIN
 from modules.DayOUT import DayOUT, DayOutEquipo
@@ -14,22 +12,21 @@ from modules.Agenda import generar_resumen_manana
 from modules.mundopizza.menump import get_menu_text
 from modules.AgendaSemProx import AgendaPlAdminSemanaSiguiente
 
-# --- Zona horaria ---
-from zoneinfo import ZoneInfo
-TZ = ZoneInfo("America/Argentina/Buenos_Aires")
+
+ahora = Config.atetime.now(Config.ARG_TZ)
 
 
-def is_weekday(date_to_check: datetime) -> bool:
+def is_weekday(date_to_check: Config.datetime) -> bool:
     return date_to_check.weekday() in (0, 1, 2, 3, 4)
 
-def is_friday(date_to_check: datetime) -> bool:
+def is_friday(date_to_check: Config.atetime) -> bool:
     return date_to_check.weekday() == 4
 
 # ============================
 # JOB DAYIN
 # ============================
-async def job_dayin(context: CallbackContext):
-    print("📤 job_dayin disparado a las", datetime.now(TZ))
+async def job_dayin(context: Config.CallbackContext):
+    print("📤 job_dayin disparado a las", Config.datetime.now(Config.ARG_TZ))
     try:
         resultado = await DayIN()
         await context.bot.send_message(
@@ -45,8 +42,8 @@ async def job_dayin(context: CallbackContext):
 # ============================
 # JOB DAYOUT
 # ============================
-async def job_dayout(context: CallbackContext):
-    print("📤 job_dayout disparado a las", datetime.now(TZ))
+async def job_dayout(context: Config.CallbackContext):
+    print("📤 job_dayout disparado a las", Config.datetime.now(Config.ARG_TZ))
     try:
         resultado = await DayOUT()
         await context.bot.send_message(
@@ -61,8 +58,8 @@ async def job_dayout(context: CallbackContext):
 # ============================
 # JOB BURN
 # ============================
-async def job_burn(context: CallbackContext):
-    print("🔥 Ejecutando job_burn", datetime.now(TZ))
+async def job_burn(context: Config.CallbackContext):
+    print("🔥 Ejecutando job_burn", Config.datetime.now(Config.ARG_TZ))
     resultado = await burndown()
     if resultado:
         await context.bot.send_message(
@@ -74,8 +71,8 @@ async def job_burn(context: CallbackContext):
 # ============================
 # JOB NEWDAY
 # ============================
-async def job_newday(context: CallbackContext):
-    print("📤 job_newday disparado a las", datetime.now(TZ))
+async def job_newday(context: Config.CallbackContext):
+    print("📤 job_newday disparado a las", Config.datetime.now(Config.ARG_TZ))
     resultado = await newday()
     if resultado:
         await context.bot.send_message(
@@ -88,8 +85,8 @@ async def job_newday(context: CallbackContext):
 # JOB RD
 # ============================
 
-async def job_rd(context: CallbackContext):
-    print("📤 job_rd disparado a las", datetime.now(TZ))
+async def job_rd(context: Config.CallbackContext):
+    print("📤 job_rd disparado a las", Config.datetime.now(Config.ARG_TZ))
     resultado = await RDs_comments(concatenado=False)
     if resultado:
         await context.bot.send_message(
@@ -101,9 +98,7 @@ async def job_rd(context: CallbackContext):
 # ============================
 # JOB AGENDA PRELIMINAR
 # ============================
-async def job_agenda_preliminar(context: CallbackContext):
-    ahora = datetime.now(TZ)
-
+async def job_agenda_preliminar(context: Config.CallbackContext):
     if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
         print(f"⚠ Prelim. agenda mañana no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
         return
@@ -123,9 +118,7 @@ async def job_agenda_preliminar(context: CallbackContext):
 # ============================
 # JOB AGENDA AUTOMÁTICA
 # ============================
-async def job_agenda_automatica(context: CallbackContext):
-    ahora = datetime.now(TZ)
-
+async def job_agenda_automatica(context: Config.CallbackContext):
     if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
         print(f"⚠️[DEBUG] Agenda automática no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
         return
@@ -145,9 +138,7 @@ async def job_agenda_automatica(context: CallbackContext):
 # ============================
 # JOB AGENDA SEM PROX
 # ============================
-async def job_agenda_semana_prox(context: CallbackContext):
-    ahora = datetime.now(TZ)
-
+async def job_agenda_semana_prox(context:Config. CallbackContext):
     if not is_friday(ahora) or ahora.date() in Config.FERIADOS:
         print(
             f"⚠️[DEBUG] Agenda semana prox no ejecutada: "
@@ -171,9 +162,7 @@ async def job_agenda_semana_prox(context: CallbackContext):
 # ============================
 # JOB FOOD REMINDER
 # ============================
-async def job_food(context: CallbackContext):
-    ahora = datetime.now(TZ)
-
+async def job_food(context: Config.CallbackContext):
     if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
         print(f"⚠️[DEBUG] food no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
         return
@@ -204,9 +193,7 @@ async def job_food(context: CallbackContext):
 # ============================
 # JOB PAY REMINDER
 # ============================
-async def job_pay(context: CallbackContext):
-    ahora = datetime.now(TZ)
-
+async def job_pay(context: Config.CallbackContext):
     if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
         print(f"⚠️[DEBUG] pay no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
         return

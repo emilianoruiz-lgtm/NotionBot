@@ -1,12 +1,13 @@
-import requests
-from datetime import datetime, timedelta
-import dateutil.parser  # Para parsear fechas con o sin zona horaria
+# ==========================================
+# 1. IMPORTS
+# ==========================================
 
-# --- CONFIGURACIONES ---
+# Módulos Locales
 import Config
 
 
-fecha_manana_dt = datetime.now(Config.ARG_TZ) + timedelta(days=1)
+
+fecha_manana_dt = Config.datetime.now(Config.ARG_TZ) + Config.timedelta(days=1)
 fecha_manana = fecha_manana_dt.strftime('%d-%m-%Y')
 
 
@@ -29,7 +30,7 @@ def get_registros_manana_calendar():
         if next_cursor:
             query["start_cursor"] = next_cursor
 
-        response = requests.post(
+        response = Config.requests.post(
             f"https://api.notion.com/v1/databases/{Config.DATABASE_ID_CALENDAR}/query",
             headers=Config.HEADERS,
             json=query
@@ -45,8 +46,8 @@ def get_registros_manana_calendar():
         date_prop = r['properties'].get('Date', {}).get('date')
         if not date_prop or not date_prop.get('start'):
             continue
-        start_dt = dateutil.parser.isoparse(date_prop['start']).replace(tzinfo=None)
-        end_dt = dateutil.parser.isoparse(date_prop['end']).replace(tzinfo=None) if date_prop.get('end') else start_dt
+        start_dt = Config.dateutil.parser.isoparse(date_prop['start']).replace(tzinfo=None)
+        end_dt = Config.dateutil.parser.isoparse(date_prop['end']).replace(tzinfo=None) if date_prop.get('end') else start_dt
         if start_dt.date() <= fecha_manana_dt.date() <= end_dt.date():
             registros_filtrados.append(r)
 
@@ -106,7 +107,7 @@ def format_linea(r):
     hora_texto = ""
     if date_prop and date_prop.get('start'):
         try:
-            dt_start = dateutil.parser.isoparse(date_prop['start']).replace(tzinfo=None)
+            dt_start = Config.dateutil.parser.isoparse(date_prop['start']).replace(tzinfo=None)
             if not (dt_start.hour == 0 and dt_start.minute == 0):
                 hora_texto = dt_start.strftime("%H:%M")
         except Exception:
@@ -141,10 +142,10 @@ def resumen_calendar(registros):
         date_prop = r['properties'].get('Date', {}).get('date', {})
         if date_prop and date_prop.get('start'):
             try:
-                return dateutil.parser.isoparse(date_prop['start']).replace(tzinfo=None)
+                return Config.dateutil.parser.isoparse(date_prop['start']).replace(tzinfo=None)
             except:
-                return datetime.max
-        return datetime.max
+                return Config.datetime.max
+        return Config.datetime.max
 
     registros.sort(key=fecha_inicio)
 
@@ -179,7 +180,7 @@ def resumen_calendar(registros):
             hora_ok = None
             if date_prop and date_prop.get('start'):
                 try:
-                    dt_start = dateutil.parser.isoparse(date_prop['start'])
+                    dt_start = Config.dateutil.parser.isoparse(date_prop['start'])
                     # Convertir siempre a hora de Argentina
                     if dt_start.tzinfo is None:
                         dt_start = Config.ARG_TZ.localize(dt_start)

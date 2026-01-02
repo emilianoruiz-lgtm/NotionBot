@@ -2,48 +2,6 @@
 # 1. IMPORTS
 # ==========================================
 
-# Librerías Estándar
-import asyncio
-import ctypes
-import html
-import inspect
-import json
-import logging
-import os
-import re
-import subprocess
-import sys
-import traceback
-import warnings
-from datetime import datetime, timedelta, date, time, timezone
-from functools import wraps
-from math import ceil
-from zoneinfo import ZoneInfo
-import time as _time
-
-
-# Librerías de Terceros
-import ntplib
-import tzdata
-import win32api
-import win32con
-import pdfplumber
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputFile
-from telegram.constants import ParseMode
-from telegram.error import RetryAfter, NetworkError, TimedOut
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ConversationHandler,
-    filters,
-    ContextTypes,
-    JobQueue,
-    CallbackContext
-)
-
-
 # Módulos Locales
 import Config
 import Horarios
@@ -76,14 +34,14 @@ from modules.handlers import (
 # ==========================================
 
 # Logging
-warnings.filterwarnings("ignore", message="If 'per_message=False'", category=UserWarning)
-warnings.filterwarnings("ignore", category=UserWarning, module="telegram")
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+Config.warnings.filterwarnings("ignore", message="If 'per_message=False'", category=UserWarning)
+Config.warnings.filterwarnings("ignore", category=UserWarning, module="telegram")
+Config.logging.basicConfig(level=Config.logging.INFO)
+logger = Config.logging.getLogger(__name__)
 
 # Timezone
-TZ = ZoneInfo("America/Argentina/Buenos_Aires")
-ahora = datetime.now(TZ)
+TZ = Config.ZoneInfo("America/Argentina/Buenos_Aires")
+ahora = Config.datetime.now(TZ)
 
 # Global States
 ELEGIR_ITEM, ELEGIR_PRECIO = range(2)
@@ -97,57 +55,57 @@ PENDIENTES = {}
 
 def run_as_admin():
     try:
-        if not ctypes.windll.shell32.IsUserAnAdmin():
-            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
-            sys.exit()
+        if not Config.ctypes.windll.shell32.IsUserAnAdmin():
+            Config.ctypes.windll.shell32.ShellExecuteW(None, "runas", Config.sys.executable, " ".join(Config.sys.argv), None, 1)
+            Config.sys.exit()
     except Exception as e:
         print(f"⚠️ run_as_admin fallo: {e}")
 
 def ensure_windows_time_service_running():
     try:
-        result = subprocess.run(["sc", "query", "w32time"], capture_output=True, text=True)
+        result = Config.subprocess.run(["sc", "query", "w32time"], capture_output=True, text=True)
         if "RUNNING" not in result.stdout:
             print("🕒 Iniciando servicio 'w32time'...")
-            subprocess.run(["sc", "config", "w32time", "start=", "auto"], capture_output=True)
-            subprocess.run(["net", "start", "w32time"], capture_output=True)
+            Config.subprocess.run(["sc", "config", "w32time", "start=", "auto"], capture_output=True)
+            Config.subprocess.run(["net", "start", "w32time"], capture_output=True)
     except Exception as e:
         print(f"⚠️ Error al verificar w32time: {e}")
 
 def sync_system_time():
     try:
-        subprocess.run(['w32tm', '/resync'], check=True, capture_output=True, text=True)
+        Config.subprocess.run(['w32tm', '/resync'], check=True, capture_output=True, text=True)
         print("✅ Hora sincronizada via w32tm.")
     except Exception:
         try:
-            client = ntplib.NTPClient()
+            client = Config.ntplib.NTPClient()
             resp = client.request("pool.ntp.org", timeout=5)
-            ntp_time = datetime.fromtimestamp(resp.tx_time, tz=timezone.utc).astimezone(TZ)
+            ntp_time = Config.datetime.fromtimestamp(resp.tx_time, tz=Config.timezone.utc).astimezone(TZ)
             print(f"[DEBUG] NTP: {ntp_time}")
         except Exception as e2:
             print(f"❌ Fallback NTP failed: {e2}")
 
 def tzutil_get_zone():
     try:
-        result = subprocess.run(['tzutil', '/g'], capture_output=True, text=True, check=True)
+        result = Config.subprocess.run(['tzutil', '/g'], capture_output=True, text=True, check=True)
         windows_tz = result.stdout.strip()
         tz_map = {"Argentina Standard Time": "America/Argentina/Buenos_Aires",}
         return tz_map.get(windows_tz, windows_tz)
-    except subprocess.CalledProcessError:
+    except Config.subprocess.CalledProcessError:
         return "Unknown"
 
 def set_system_timezone():
     """Set the system timezone to Argentina Standard Time."""
     desired_tz = "Argentina Standard Time"
     try:
-        subprocess.run(['tzutil', '/s', desired_tz], check=True)
+        Config.subprocess.run(['tzutil', '/s', desired_tz], check=True)
         print(f"✅ System timezone set to {desired_tz}")
-    except subprocess.CalledProcessError as e:
+    except Config.subprocess.CalledProcessError as e:
         print(f"❌ Error setting system timezone: {e}")
 
 def skip_if_feriado(job_func):
-    @wraps(job_func)
+    @Config.wraps(job_func)
     async def wrapper(context):
-        hoy = datetime.now(Config.ARG_TZ).date()
+        hoy = Config.datetime.now(Config.ARG_TZ).date()
 
         if hoy in Config.FERIADOS:
             print(f"⛔ {job_func.__name__} NO ejecutado ({hoy} feriado)")
@@ -159,18 +117,18 @@ def skip_if_feriado(job_func):
 
 def ensure_windows_time_service_running():
     try:
-        result = subprocess.run(["sc", "query", "w32time"], capture_output=True, text=True)
+        result = Config.subprocess.run(["sc", "query", "w32time"], capture_output=True, text=True)
         if "RUNNING" not in result.stdout:
             print("🕒 El servicio 'w32time' no está en ejecución. Intentando iniciarlo...")
-            subprocess.run(["sc", "config", "w32time", "start=", "auto"], capture_output=True)
-            subprocess.run(["net", "start", "w32time"], capture_output=True)
+            Config.subprocess.run(["sc", "config", "w32time", "start=", "auto"], capture_output=True)
+            Config.subprocess.run(["net", "start", "w32time"], capture_output=True)
         else:
             print("🕒 El servicio 'w32time' ya está en ejecución.")
     except Exception as e:
         print(f"⚠️ Error al verificar/iniciar w32time: {e}")
 
     try:
-        resync = subprocess.run(["w32tm", "/resync"], capture_output=True, text=True)
+        resync = Config.subprocess.run(["w32tm", "/resync"], capture_output=True, text=True)
         if resync.returncode == 0:
             print("✅ Hora sincronizada correctamente con w32tm.")
         else:
@@ -195,7 +153,6 @@ def normalizar_ausente(nombre: str) -> str:
         if nombre.lower() == completo.lower(): return alias.upper()
     return nombre.upper()
 
-
 def convertir_elo_a_alias(elo_dict: dict) -> dict:
     return {Config.ALIAS_PERSONAS.get(j, j): r for j, r in elo_dict.items()}
 
@@ -204,7 +161,7 @@ def filtrar_disponibles(jugadores_elo: dict, ausentes: list) -> dict:
     return {j: e for j, e in jugadores_elo.items() if j.upper() not in ausentes_set}
 
 async def maybe_await(job_func, context=None):
-    sig = inspect.signature(job_func)
+    sig = Config.inspect.signature(job_func)
     num_params = len(sig.parameters)
     
     def run_sync():
@@ -212,19 +169,19 @@ async def maybe_await(job_func, context=None):
         if num_params == 1: return job_func(context)
         return job_func(context, None)
 
-    if inspect.iscoroutinefunction(job_func):
+    if Config.inspect.iscoroutinefunction(job_func):
         if num_params == 0: return await job_func()
         if num_params == 1: return await job_func(context)
         return await job_func(context, None)
     
-    return await asyncio.get_running_loop().run_in_executor(None, run_sync)
+    return await Config.asyncio.get_running_loop().run_in_executor(None, run_sync)
 
 
 # ==========================================
 # 5. HANDLERS DE MENSAJERÍA Y TELEGRAM
 # ==========================================
 
-async def safe_send_message(bot, chat_id, text, parse_mode=ParseMode.HTML, **kwargs):
+async def safe_send_message(bot, chat_id, text, parse_mode=Config.ParseMode.HTML, **kwargs):
     MAX_LEN = 4000
     start = 0
     while start < len(text):
@@ -237,8 +194,8 @@ async def safe_send_message(bot, chat_id, text, parse_mode=ParseMode.HTML, **kwa
         while True:
             try:
                 return await bot.send_message(chat_id, msg_chunk, parse_mode=parse_mode, **kwargs)
-            except RetryAfter as e:
-                await asyncio.sleep(e.retry_after)
+            except Config.RetryAfter as e:
+                await Config.asyncio.sleep(e.retry_after)
         start = end
 
 async def send_long_message(bot, chat_id, text, parse_mode="HTML", **kwargs):
@@ -247,7 +204,7 @@ async def send_long_message(bot, chat_id, text, parse_mode="HTML", **kwargs):
 
 async def error_handler(update, context):
     err = context.error
-    if isinstance(err, (NetworkError, TimedOut)):
+    if isinstance(err, (Config.NetworkError, Config.TimedOut)):
         print("⚠️ Error de red con Telegram.")
         return
     print("❌ Error no controlado:", err)
@@ -257,7 +214,7 @@ async def error_handler(update, context):
 # 6. FUNCIONALIDADES DEL BOT (COMANDOS)
 # ==========================================
 
-async def manejar_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def manejar_pdf(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
     pdf_path = "entrada.pdf"
     try:
         archivo = update.message.document
@@ -270,11 +227,11 @@ async def manejar_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
             texto = "\n".join([p.extract_text() or "" for p in pdf.pages])
         if "ARQ" in texto:
             items = parsear_oferta_robusto(pdf_path)
-            nombre = re.search(r"ARQ\d+", texto).group(0)
+            nombre = Config.re.search(r"ARQ\d+", texto).group(0)
             excel_path = f"Oferta_Siemens_{nombre}.xlsx"
         elif "BRIKET S.A." in texto:
             items = parsear_briket(pdf_path)
-            excel_path = f"OC_Briket_{os.path.splitext(archivo.file_name)[0]}.xlsx"
+            excel_path = f"OC_Briket_{Config.os.path.splitext(archivo.file_name)[0]}.xlsx"
         else:
             await update.message.reply_text("❌ No reconozco el tipo de PDF.")
             return
@@ -285,12 +242,12 @@ async def manejar_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Error en manejar_pdf")
         await update.message.reply_text(f"❌ Error: {e}")
     finally:
-        if os.path.exists(pdf_path): os.remove(pdf_path)
+        if Config.os.path.exists(pdf_path): Config.os.remove(pdf_path)
 
 async def curva_parcial(update, context):
     await update.message.reply_text("📈 Generando curvas...")
     buf = await generar_curva_parcial()
-    await context.bot.send_photo(update.effective_chat.id, photo=InputFile(buf, "curva.png"), caption="📊 Burndown actual")
+    await context.bot.send_photo(update.effective_chat.id, photo=Config.InputFile(buf, "curva.png"), caption="📊 Burndown actual")
 
 async def burn(update, context):
     await update.message.reply_text("⚡ Ejecutando Burndown...")
@@ -306,34 +263,34 @@ async def hoy(update, context):
 # 7. GESTIÓN DE JOBS Y HORARIOS
 # ==========================================
 
-def next_valid_run(job_time: time, days=(0,1,2,3,4)):
-    now = datetime.now(TZ)
-    job_dt = datetime.combine(now.date(), job_time, TZ)
-    if job_dt <= now: job_dt += timedelta(days=1)
+def next_valid_run(job_time: Config.time, days=(0,1,2,3,4)):
+    now = Config.datetime.now(TZ)
+    job_dt = Config.datetime.combine(now.date(), job_time, TZ)
+    if job_dt <= now: job_dt += Config.timedelta(days=1)
     while job_dt.weekday() not in days:
-        job_dt += timedelta(days=1)
+        job_dt += Config.timedelta(days=1)
     return job_dt
 
 async def safe_job_runner(ctx, job_func, job_name, grace_period=300):
-    start_ts = _time.time()
+    start_ts = Config._time.time()
     task = None
     try:
         print(f"[JOB] ▶ Ejecutando '{job_name}'...")
-        task = asyncio.create_task(maybe_await(job_func, ctx))
-        await asyncio.wait_for(task, timeout=grace_period)
-        print(f"[JOB] ✔ '{job_name}' finalizado ({_time.time() - start_ts:.1f}s)")
-    except asyncio.TimeoutError:
+        task = Config.asyncio.create_task(maybe_await(job_func, ctx))
+        await Config.asyncio.wait_for(task, timeout=grace_period)
+        print(f"[JOB] ✔ '{job_name}' finalizado ({Config._time.time() - start_ts:.1f}s)")
+    except Config.asyncio.TimeoutError:
         print(f"[JOB] ⏱ Timeout en '{job_name}', cancelando tarea...")
         if task:
             task.cancel()
             try:
                 await task
-            except asyncio.CancelledError:
+            except Config.asyncio.CancelledError:
                 print(f"[JOB] 🗑 Tarea '{job_name}' cancelada correctamente.")
             except Exception as e:
                 print(f"[JOB] ⚠️ Excepción al cancelar tarea '{job_name}': {e}")
     except Exception as e:
-        tb = traceback.format_exc()
+        tb = Config.traceback.format_exc()
         print(f"[JOB] ❌ Error en '{job_name}': {e}\n{tb}")
         if ctx and getattr(ctx, "bot", None):
             try:
@@ -343,7 +300,7 @@ async def safe_job_runner(ctx, job_func, job_name, grace_period=300):
     finally:
         print(f"[JOB] ⏹ '{job_name}' terminado.\n", flush=True)
 
-async def clear_jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def clear_jobs(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
     job_queue = context.job_queue
     if job_queue is not None:
         jobs = job_queue.jobs()
@@ -371,13 +328,13 @@ def schedule_daily_job(app, job_func, job_time, days=(0, 1, 2, 3, 4), job_name="
         print(f"🧹 Eliminando job existente con nombre {job_name}")
         j.schedule_removal()
 
-    if isinstance(job_time, datetime):
+    if isinstance(job_time, Config.datetime):
         # ya es datetime con o sin tz
         if job_time.tzinfo is None:
             job_time = job_time.replace(tzinfo=Config.ARG_TZ)
         else:
             job_time = job_time.astimezone(Config.ARG_TZ)
-    elif isinstance(job_time, time):
+    elif isinstance(job_time, Config.time):
         # es un time plano
         if job_time.tzinfo is None:
             job_time = job_time.replace(tzinfo=Config.ARG_TZ)
@@ -390,31 +347,30 @@ def schedule_daily_job(app, job_func, job_time, days=(0, 1, 2, 3, 4), job_name="
     # Crear el job (run_daily usa hora, pero forzamos initial datetime)
     app.job_queue.run_repeating(
         job_wrapper,
-        interval=timedelta(days=1),
+        interval=Config.timedelta(days=1),
         first=next_run,
         name=job_name
     )
 
     print(f"📋 {next_run.strftime('%A %d/%m/%Y |%H:%M:%S|')} → {job_name}")
 
-
-async def job_restart(context: ContextTypes.DEFAULT_TYPE):
+async def job_restart(context: Config.ContextTypes.DEFAULT_TYPE):
     print("♻️ Reiniciando bot automáticamente...")
-    await asyncio.sleep(2)
-    os.execv(sys.executable, ['python'] + sys.argv)
+    await Config.asyncio.sleep(2)
+    Config.os.execv(Config.sys.executable, ['python'] + Config.sys.argv)
 
 
 # ==========================================
 # 8. CONVERSATION HANDLERS
 # ==========================================
 
-conv_setmp = ConversationHandler(
-    entry_points=[CommandHandler("setmp", setmp_start)],
+conv_setmp = Config.ConversationHandler(
+    entry_points=[Config.CommandHandler("setmp", setmp_start)],
     states={
-        ELEGIR_ITEM: [CallbackQueryHandler(elegir_item)],
-        ELEGIR_PRECIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, elegir_precio)],
+        ELEGIR_ITEM: [Config.CallbackQueryHandler(elegir_item)],
+        ELEGIR_PRECIO: [Config.MessageHandler(Config.filters.TEXT & ~Config.filters.COMMAND, elegir_precio)],
     },
-    fallbacks=[CommandHandler("cancelar", cancelar_setmp)],
+    fallbacks=[Config.CommandHandler("cancelar", cancelar_setmp)],
 )
 
 
@@ -422,73 +378,73 @@ conv_setmp = ConversationHandler(
 # 9. COMANDOS
 # ==========================================
 
-# Estados para el ConversationHandler
+# Estados para el Config.ConversationHandler
 ELEGIR_ITEM, ELEGIR_PRECIO = range(2)
 PENDIENTES = {}  # guarda acciones pendientes por usuario
 
 
-async def curva_parcial_huemul(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def curva_parcial_huemul(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"📈 Generando curva de burndown Huemul")
 
     buf = await generar_curva_parcial_equipo("Huemules")
     await context.bot.send_photo(
         chat_id=update.effective_chat.id,
-        photo=InputFile(buf, filename="curva_diferencia.png"),
+        photo=Config.InputFile(buf, filename="curva_diferencia.png"),
         caption=f"📊 Burndown Huemul actual"
     )
 
-async def curva_parcial_caiman(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def curva_parcial_caiman(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"📈 Generando curva de burndown Caimán")
 
     buf = await generar_curva_parcial_equipo("Caimanes")
     await context.bot.send_photo(
         chat_id=update.effective_chat.id,
-        photo=InputFile(buf, filename="curva_diferencia.png"),
+        photo=Config.InputFile(buf, filename="curva_diferencia.png"),
         caption=f"📊 Burndown Caimám actual"
     )
 
-async def curva_parcial_zorro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def curva_parcial_zorro(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"📈 Generando curva de burndown Zorro")
 
     buf = await generar_curva_parcial_equipo("Zorros")
     await context.bot.send_photo(
         chat_id=update.effective_chat.id,
-        photo=InputFile(buf, filename="curva_diferencia.png"),
+        photo=Config.InputFile(buf, filename="curva_diferencia.png"),
         caption=f"📊 Burndown Zorro actual"
     )
 
-async def newburnreg(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[CMD] {datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Newday manual")
+async def newburnreg(update: Config.pdate, context: Config.ContextTypes.DEFAULT_TYPE):
+    print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Newday manual")
     await update.message.reply_text("⚡ Ejecutando tarea...", parse_mode="HTML")
     await newday()
-    await update.message.reply_text("✔️ Nuevos registros de Burndown creados en Notion", parse_mode=ParseMode.HTML)
+    await update.message.reply_text("✔️ Nuevos registros de Burndown creados en Notion", parse_mode=Config.ParseMode.HTML)
 
-async def rd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[CMD] {datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  RD manual")
+async def rd(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  RD manual")
     resultado = await RDs_comments(concatenado=True)
-    await update.message.reply_text(resultado, parse_mode=ParseMode.HTML)
+    await update.message.reply_text(resultado, parse_mode=Config.ParseMode.HTML)
 
-async def rd2(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[CMD] {datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  RD manual")
+async def rd2(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  RD manual")
     try:
         # Ejecutamos exactamente lo mismo que el Job programado
         await maybe_await(job_rd, context)
 
         await update.message.reply_text(
             "✅ Job RD ejecutado manualmente.",
-            parse_mode=ParseMode.HTML
+            parse_mode=Config.ParseMode.HTML
         )
     except Exception as e:
         await update.message.reply_text(
             f"❌ Error al ejecutar job_rd manual: {e}",
-            parse_mode=ParseMode.HTML
+            parse_mode=Config.ParseMode.HTML
         )
 
-async def epicas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[CMD] {datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Épicas")
+async def epicas(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Épicas")
     try:
         # Obtener el mensaje de listar_planes (ya devuelve HTML seguro)
         msg = await listar_planes()
@@ -498,7 +454,7 @@ async def epicas(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bot=context.bot,
             chat_id=update.effective_chat.id,
             text=msg,
-            parse_mode=ParseMode.HTML
+            parse_mode=Config.ParseMode.HTML
         )
     except Exception as e:
         logger.error(f"Error en epicas: {e}\nMensaje original: {msg}")
@@ -509,33 +465,33 @@ async def epicas(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"⚠️ Error al mostrar épicas: {str(e)}\nMensaje sin formato:\n{msg}",
             parse_mode=None
         )
-    return ConversationHandler.END
+    return Config.ConversationHandler.END
 
-async def agenda(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[CMD] {datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Agenda mañana")
+async def agenda(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Agenda mañana")
     resultado = await generar_resumen_manana()
     if resultado and resultado.strip():
-        await safe_send_message(context.bot, update.effective_chat.id, resultado, parse_mode=ParseMode.HTML)
+        await safe_send_message(context.bot, update.effective_chat.id, resultado, parse_mode=Config.ParseMode.HTML)
     else:
-        await update.message.reply_text("⚠️ No se encontró información para mostrar.", parse_mode=ParseMode.HTML)
+        await update.message.reply_text("⚠️ No se encontró información para mostrar.", parse_mode=Config.ParseMode.HTML)
 
-async def agendaPlanAdmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[CMD] {datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Agenda PL ADmin")
+async def agendaPlanAdmin(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Agenda PL ADmin")
     resultado = await AgendaPlAdmin()
-    await safe_send_message(context.bot, update.effective_chat.id, resultado, parse_mode=ParseMode.HTML)
+    await safe_send_message(context.bot, update.effective_chat.id, resultado, parse_mode=Config.ParseMode.HTML)
 
-async def agendaSemProxima(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[CMD] {datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Agenda semana próxima")
+async def agendaSemProxima(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Agenda semana próxima")
     resultado = await AgendaPlAdminSemanaSiguiente()
-    await safe_send_message(context.bot, update.effective_chat.id, resultado, parse_mode=ParseMode.HTML)
+    await safe_send_message(context.bot, update.effective_chat.id, resultado, parse_mode=Config.ParseMode.HTML)
 
-async def debug_jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[CMD] {datetime.now(TZ).strftime('%d/%m/%y %H:%M')} - Mostrar Jobs programados ")
+async def debug_jobs(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} - Mostrar Jobs programados ")
     jobs = context.job_queue.jobs()
     if not jobs:
         msg = "⛔ No hay jobs programados en el JobQueue."
     else:
-        ahora = datetime.now(TZ)
+        ahora = Config.datetime.now(TZ)
         hora_map = {
             "DayIN automático": Horarios.hora_dayin,
             "Comentarios RD": Horarios.hora_rd,
@@ -572,18 +528,18 @@ async def debug_jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"{icon} {timestr} {nombre_corto}\n" 
             
     if update.callback_query:
-        await update.callback_query.edit_message_text(msg, parse_mode=ParseMode.HTML)
+        await update.callback_query.edit_message_text(msg, parse_mode=Config.ParseMode.HTML)
     else:
-        await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+        await update.message.reply_text(msg, parse_mode=Config.ParseMode.HTML)
 
-async def debug_jobs2(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def debug_jobs2(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
     jobs = context.job_queue.jobs()
     if not jobs:
         await update.message.reply_text("❌ No hay jobs activos.")
         return
 
     lines = ["🧾 *Jobs actualmente programados:*\n"]
-    now = datetime.now(TZ)
+    now = Config.datetime.now(TZ)
 
     for job in jobs:
         # Algunos jobs aún no tienen next_run_time hasta que corre el loop
@@ -608,7 +564,7 @@ async def debug_jobs2(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
-async def chatid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def chatid(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     thread_id = update.message.message_thread_id  # Puede ser None si no estás en un topic
 
@@ -654,10 +610,10 @@ async def sethorario_start(update, context):
         tareas.append((minutos, nombre, var_name, hora_actual))
     tareas.sort(key=lambda x: x[0])
     keyboard = [
-        [InlineKeyboardButton(f"{nombre} ({hora_actual.strftime('%H:%M')})", callback_data=var_name)]
+        [Config.InlineKeyboardButton(f"{nombre} ({hora_actual.strftime('%H:%M')})", callback_data=var_name)]
         for _, nombre, var_name, hora_actual in tareas
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard, row_width=1)
+    reply_markup = Config.InlineKeyboardMarkup(keyboard, row_width=1)
     texto = "🕑 Seleccioná la tarea que querés modificar:"
 
     if update.callback_query:
@@ -667,7 +623,7 @@ async def sethorario_start(update, context):
         await update.message.reply_text(texto, reply_markup=reply_markup)
     return SET_TAREA
 
-async def elegir_tarea(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def elegir_tarea(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     tarea = query.data
@@ -677,7 +633,7 @@ async def elegir_tarea(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text(
             "⚠️ Tarea inválida. Por favor, inicia de nuevo con /sethorario."
         )
-        return ConversationHandler.END
+        return Config.ConversationHandler.END
     context.user_data["tarea"] = tarea
     context.user_data["tarea_var"] = TAREAS_MAP[tarea]
 
@@ -687,15 +643,15 @@ async def elegir_tarea(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return SET_HORA
 
-async def setear_hora(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def setear_hora(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
     """Recibe la hora, actualiza Horarios.py y reprograma el job"""
     hora_str = update.message.text.strip()
-    if not re.match(r"^\d{2}:\d{2}$", hora_str):
+    if not Config.re.match(r"^\d{2}:\d{2}$", hora_str):
         await update.message.reply_text("⚠️ Formato inválido. Usá HH:MM (ej: 08:45)")
         return SET_HORA
 
     hh, mm = map(int, hora_str.split(":"))
-    nueva_hora = time(hour=hh, minute=mm, tzinfo=Config.ARG_TZ)
+    nueva_hora = Config.time(hour=hh, minute=mm, tzinfo=Config.ARG_TZ)
     var_name = context.user_data["tarea_var"]
 
     # === Actualizar Horarios.py ===
@@ -733,13 +689,13 @@ async def setear_hora(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"✅ Horario de <b>{var_name}</b> actualizado a {hora_str}",
-        parse_mode=ParseMode.HTML
+        parse_mode=Config.ParseMode.HTML
     )
-    return ConversationHandler.END
+    return Config.ConversationHandler.END
 
-async def cancelar_sethorario(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cancelar_sethorario(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Configuración cancelada.")
-    return ConversationHandler.END
+    return Config.ConversationHandler.END
 
 
 # ==========================================
@@ -753,7 +709,7 @@ if __name__ == "__main__":
     set_system_timezone()
     sync_system_time()
 
-    app = Application.builder().token(Config.TELEGRAM_TOKEN).build()
+    app = Config.Application.builder().token(Config.TELEGRAM_TOKEN).build()
    
     # Configurar handlers
     app.add_handler(conv_dayin)
@@ -763,36 +719,36 @@ if __name__ == "__main__":
     app.add_handler(conv_setmp)
     
     # Comandos con Wrap general "Ejecutando tarea"
-    app.add_handler(CommandHandler("debugjobs", wrap_handler(debug_jobs)))
-    app.add_handler(CommandHandler("next", wrap_handler(debug_jobs2)))
-    app.add_handler(CommandHandler("clearjobs", wrap_handler(clear_jobs)))
-    app.add_handler(CommandHandler("epic", wrap_handler(epicas)))
-    app.add_handler(CommandHandler("hoy", wrap_handler(hoy)))
-    app.add_handler(CommandHandler("agenda", wrap_handler(agenda)))
-    app.add_handler(CommandHandler("agendapladmin", wrap_handler(agendaPlanAdmin)))
-    app.add_handler(CommandHandler("agendasemprox", wrap_handler(agendaSemProxima)))
-    app.add_handler(CommandHandler("rd", wrap_handler(rd)))
-    app.add_handler(CommandHandler("rd2", wrap_handler(rd2)))
+    app.add_handler(Config.CommandHandler("debugjobs", wrap_handler(debug_jobs)))
+    app.add_handler(Config.CommandHandler("next", wrap_handler(debug_jobs2)))
+    app.add_handler(Config.CommandHandler("clearjobs", wrap_handler(clear_jobs)))
+    app.add_handler(Config.CommandHandler("epic", wrap_handler(epicas)))
+    app.add_handler(Config.CommandHandler("hoy", wrap_handler(hoy)))
+    app.add_handler(Config.CommandHandler("agenda", wrap_handler(agenda)))
+    app.add_handler(Config.CommandHandler("agendapladmin", wrap_handler(agendaPlanAdmin)))
+    app.add_handler(Config.CommandHandler("agendasemprox", wrap_handler(agendaSemProxima)))
+    app.add_handler(Config.CommandHandler("rd", wrap_handler(rd)))
+    app.add_handler(Config.CommandHandler("rd2", wrap_handler(rd2)))
     
     # Comandos críticos, con pedido de confirmación 
     app.add_handler(confirmar_handler("burn", burn))
     app.add_handler(confirmar_handler("newday", newburnreg))
     
     # Comandos cortos, sin "Ejecutando tarea"
-    app.add_handler(CommandHandler("mp", mostrar_menu))
-    app.add_handler(CommandHandler("ChatID", chatid))
-    app.add_handler(CommandHandler("ping", ping))
+    app.add_handler(Config.CommandHandler("mp", mostrar_menu))
+    app.add_handler(Config.CommandHandler("ChatID", chatid))
+    app.add_handler(Config.CommandHandler("ping", ping))
 
     # Comandos cortos, con Wrap propio
-    app.add_handler(CommandHandler("curvas", curva_parcial))
-    app.add_handler(CommandHandler("curva_huemul", curva_parcial_huemul))
-    app.add_handler(CommandHandler("curva_caiman", curva_parcial_caiman))
-    app.add_handler(CommandHandler("curva_zorro", curva_parcial_zorro))
+    app.add_handler(Config.CommandHandler("curvas", curva_parcial))
+    app.add_handler(Config.CommandHandler("curva_huemul", curva_parcial_huemul))
+    app.add_handler(Config.CommandHandler("curva_caiman", curva_parcial_caiman))
+    app.add_handler(Config.CommandHandler("curva_zorro", curva_parcial_zorro))
     
-    app.add_handler(MessageHandler(filters.Document.PDF, manejar_pdf))
+    app.add_handler(Config.MessageHandler(Config.filters.Document.PDF, manejar_pdf))
 
     #app.add_error_handler(error_handler)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generic_message))
+    app.add_handler(Config.MessageHandler(Config.filters.TEXT & ~Config.filters.COMMAND, generic_message))
 
     # Programar todos los jobs
     jobs_to_schedule = [
@@ -837,13 +793,13 @@ if __name__ == "__main__":
 
     app.job_queue.run_daily(
         job_restart,
-        time(hour=3, minute=30, tzinfo=Config.ARG_TZ),
+        Config.time(hour=3, minute=30, tzinfo=Config.ARG_TZ),
         name="Reinicio diario"
     )
 
-    print(f"🤖 Bot corriendo... Hora actual: {datetime.now(TZ).strftime('%H:%M:%S')} ({TZ})")
+    print(f"🤖 Bot corriendo... Hora actual: {Config.datetime.now(TZ).strftime('%H:%M:%S')} ({TZ})")
     app.run_polling(
-        allowed_updates=Update.ALL_TYPES,
+        allowed_updates=Config.Update.ALL_TYPES,
         )
 
     print(f"🧾 Jobs en JobQueue al finalizar schedule: {len(jobs)}")

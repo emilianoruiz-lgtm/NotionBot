@@ -1,17 +1,10 @@
-import asyncio
-import aiohttp
-from datetime import datetime
-from telegram import Bot,InputFile
-from telegram.constants import ParseMode
-import html
-from collections import defaultdict
-import json
-import re
-import base64
-from modules.CurvaParcial import generar_curva_parcial_equipo
+# ==========================================
+# 1. IMPORTS
+# ==========================================
 
-# --- CONFIGURACIONES ---
+# Módulos Locales
 import Config
+from modules.CurvaParcial import generar_curva_parcial_equipo
 
 # --- UTILIDADES ---
 
@@ -20,14 +13,14 @@ async def upload_image_temporal(buf, bot, chat_id):
     Sube la imagen a Telegram y devuelve un link público.
     Usa el chat del bot como almacenamiento temporal.
     """
-    sent_photo = await bot.send_photo(chat_id=chat_id, photo=InputFile(buf, filename="curva.png"))
+    sent_photo = await bot.send_photo(chat_id=chat_id, photo=Config.InputFile(buf, filename="curva.png"))
     file_id = sent_photo.photo[-1].file_id
     file_info = await bot.get_file(file_id)
     return file_info.file_path  # URL público
 
 
 def telegram_escape(text: str) -> str:
-    return html.escape(text)
+    return Config.html.escape(text)
 
 def notion_page_url(page_id: str) -> str:
     return f"https://www.notion.so/{page_id.replace('-', '')}"
@@ -41,7 +34,7 @@ async def fetch_json(session, url, method="GET", payload=None, desc=""):
         else:
             async with session.get(url, headers=Config.HEADERS) as resp:
                 text = await resp.text()
-        data = json.loads(text)
+        data = Config.json.loads(text)
         if resp.status >= 300:
             print(f"[HTTP {resp.status}] {desc}\nResponse: {text}")
         return data
@@ -60,7 +53,7 @@ async def post_comment(session, page_id, comentario):
         return await resp.json()
 
 async def get_registros_hoy(session):
-    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
+    fecha_hoy = Config.datetime.now().strftime('%Y-%m-%d')
     query = {"filter": {"property": "Date", "date": {"equals": fecha_hoy}}}
     data = await fetch_json(session, f"https://api.notion.com/v1/databases/{Config.DATABASE_ID}/query",
                             method="POST", payload=query, desc=f"Query BURN ({fecha_hoy})")
@@ -170,7 +163,7 @@ async def get_tasks_from_plan(session, plan):
         if date_done_prop and date_done_prop.get("type") == "date":
             date_info = date_done_prop.get("date")
             if date_info and date_info.get("start"):
-                if date_info["start"][:10] == datetime.now().strftime('%Y-%m-%d'):
+                if date_info["start"][:10] == Config.datetime.now().strftime('%Y-%m-%d'):
                     done_today = True
 
         responsable = ""
@@ -211,7 +204,7 @@ async def get_tasks_from_plan(session, plan):
         return ["- Sin TASK"], ["- Sin TASK"], 0, 0, [], []
 
     # --- acá recién llamamos al gather (una sola vez) ---
-    results = await asyncio.gather(*(fetch_task(tid) for tid in tasks_ids))
+    results = await Config.asyncio.gather(*(fetch_task(tid) for tid in tasks_ids))
     lines_icono, lines_sin_icono, fibs_vals, fibs_done_vals, done_today_flags, is_done_flags, ids, titles = zip(*results)
 
     total_fibs = sum(fibs_vals)
@@ -224,17 +217,17 @@ async def get_tasks_from_plan(session, plan):
 # --- TELEGRAM ---
 async def enviar_a_telegram(mensaje_html, equipo: str):
     print(f"Enviando comentario a Telegram para {equipo}...")
-    bot = Bot(token=Config.TELEGRAM_TOKEN)
+    bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
     try:
         thread_id = Config.THREAD_IDS.get(equipo)
         if not thread_id:
             print(f"⚠️ No se encontró thread_id para {equipo}, se enviará al chat principal.")
-            await bot.send_message(chat_id=Config.CHAT_ID, text=mensaje_html, parse_mode=ParseMode.HTML)
+            await bot.send_message(chat_id=Config.CHAT_ID, text=mensaje_html, parse_mode=Config.ParseMode.HTML)
         else:
             await bot.send_message(
                 chat_id=Config.CHAT_ID,
                 text=mensaje_html,
-                parse_mode=ParseMode.HTML,
+                parse_mode=Config.ParseMode.HTML,
                 message_thread_id=thread_id
             )
     except Exception as e:
@@ -351,7 +344,7 @@ async def DayOutEquipo(session, equipo_objetivo):
 
                 # recolectar tareas con FIBS y responsable
                 for task_line, fibs_val, flag in zip(tasks_icono,
-                                                     [re.search(r"\((\d+) Fibs\)", t) for t in tasks_icono],
+                                                     [Config.re.search(r"\((\d+) Fibs\)", t) for t in tasks_icono],
                                                      [("—" in t) for t in tasks_icono]):
                     if flag and fibs_val:
                         fibs_num = int(fibs_val.group(1))
@@ -391,7 +384,7 @@ async def DayOutEquipo(session, equipo_objetivo):
                     else:
                         for task in tasks_icono:
                             # task tiene HTML (<a>...), eliminamos tags para Notion
-                            tarea_plana = re.sub(r"<[^>]+>", "", task).strip()
+                            tarea_plana = Config.re.sub(r"<[^>]+>", "", task).strip()
                             mensaje_html += f"        • {task}\n"
                             mensaje_notion += f"        • {tarea_plana}\n"
 
@@ -405,7 +398,7 @@ async def DayOutEquipo(session, equipo_objetivo):
 
         mensaje_analisis = f"\n------------------------------------------------\n💰 Total {equipo_objetivo}: {registro_total_fibs_done}/{registro_total_fibs} FIBS\n"
         # --- DÍA DE LA SEMANA ---
-        dia_semana = datetime.now().weekday()  # Lunes=0 ... Domingo=6
+        dia_semana = Config.datetime.now().weekday()  # Lunes=0 ... Domingo=6
 
         if dia_semana in (0, 1):  # Lunes o Martes
             mensaje_analisis += "------------------------------------------------\n🟦 Esperando tendencia\n\n"
@@ -430,14 +423,14 @@ async def DayOutEquipo(session, equipo_objetivo):
             else:
                 mensaje_analisis += "Vel: -50% 🚨☠️ Problemas!\n"
 
-        tareas_por_responsable = defaultdict(list)
+        tareas_por_responsable = Config.defaultdict(list)
         for line, fibs in done_today_overall:
             if "—" in line:
                 titulo_html, resp = line.split("—", 1)
                 resp = resp.strip()
             else:
                 titulo_html, resp = line, "Sin responsable"
-            match = re.search(r'<a href="([^"]+)">([^<]+)</a>', titulo_html)
+            match = Config.re.search(r'<a href="([^"]+)">([^<]+)</a>', titulo_html)
             link, texto = (match.group(1), match.group(2)) if match else ("#", titulo_html)
             tareas_por_responsable[resp].append((texto, link, fibs))
 
@@ -476,17 +469,17 @@ async def DayOutEquipo(session, equipo_objetivo):
             caption = f"📈 Curva burndown actual de {equipo_objetivo} ({fecha_registro})"
 
             # Subir imagen a Notion
-            bot = Bot(token=Config.TELEGRAM_TOKEN)
+            bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
             await post_image_to_page(session, registro['id'], buf, caption, bot, Config.CHAT_ID)
 
             # Enviar imagen al grupo de Telegram (en el hilo del equipo)
-            bot = Bot(token=Config.TELEGRAM_TOKEN)
+            bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
             thread_id = Config.THREAD_IDS.get(equipo_objetivo)
             await bot.send_photo(
                 chat_id=Config.CHAT_ID,
                 photo=buf,
                 caption=caption,
-                parse_mode=ParseMode.HTML,
+                parse_mode=Config.ParseMode.HTML,
                 message_thread_id=thread_id
             )
 
@@ -514,7 +507,7 @@ async def DayOutProcesar(session, equipos: list[str]) -> list[str]:
 
 # --- MAIN ---
 async def DayOUT():
-    async with aiohttp.ClientSession() as session:
+    async with Config.aiohttp.ClientSession() as session:
         resultados = await DayOutProcesar(session, Config.EQUIPOS)
     return "\n".join(resultados)
 
@@ -523,13 +516,13 @@ async def DayOUT():
 
 async def enviar_a_usuario(update, mensaje_html):
     """Envía un mensaje de vuelta al mismo chat que inició la conversación."""
-    bot = Bot(token=Config.TELEGRAM_TOKEN)
+    bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
     try:
         chat_id = update.effective_chat.id  # obtiene el chat de origen
         await bot.send_message(
             chat_id=chat_id,
             text=mensaje_html,
-            parse_mode=ParseMode.HTML
+            parse_mode=Config.ParseMode.HTML
         )
     except Exception as e:
         print("Error enviando mensaje al usuario:", e)
@@ -592,7 +585,7 @@ async def DayOutTest(update, session, equipo_objetivo):
                 total_fibs_done_parcial += total_fibs_done_plan
 
                 for task_line, fibs_val, flag in zip(tasks_icono,
-                                                     [re.search(r"\((\d+) Fibs\)", t) for t in tasks_icono],
+                                                     [Config.re.search(r"\((\d+) Fibs\)", t) for t in tasks_icono],
                                                      [("—" in t) for t in tasks_icono]):
                     if flag and fibs_val:
                         fibs_num = int(fibs_val.group(1))
@@ -630,7 +623,7 @@ async def DayOutTest(update, session, equipo_objetivo):
 
         mensaje_analisis = f"\n------------------------------------------------\n💰 Total {equipo_objetivo}: {registro_total_fibs_done}/{registro_total_fibs} FIBS\n"
         # --- DÍA DE LA SEMANA ---
-        dia_semana = datetime.now().weekday()  # Lunes=0 ... Domingo=6
+        dia_semana = Config.datetime.now().weekday()  # Lunes=0 ... Domingo=6
 
         if dia_semana in (0, 1):  # Lunes o Martes
             mensaje_analisis += "------------------------------------------------\n🟦 Esperando tendencia\n\n"
@@ -654,14 +647,14 @@ async def DayOutTest(update, session, equipo_objetivo):
             else:
                 mensaje_analisis += "Vel: -50% 🚨☠️ Problemas!\n"
 
-        tareas_por_responsable = defaultdict(list)
+        tareas_por_responsable = Config.defaultdict(list)
         for line, fibs in done_today_overall:
             if "—" in line:
                 titulo_html, resp = line.split("—", 1)
                 resp = resp.strip()
             else:
                 titulo_html, resp = line, "Sin responsable"
-            match = re.search(r'<a href="([^"]+)">([^<]+)</a>', titulo_html)
+            match = Config.re.search(r'<a href="([^"]+)">([^<]+)</a>', titulo_html)
             link, texto = (match.group(1), match.group(2)) if match else ("#", titulo_html)
             tareas_por_responsable[resp].append((texto, link, fibs))
 

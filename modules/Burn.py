@@ -1,14 +1,8 @@
-import asyncio
-import requests
-import subprocess
-from datetime import datetime, timedelta
-from telegram import Bot
-from telegram.constants import ParseMode
-from pathlib import Path
-import aiohttp
+# ==========================================
+# 1. IMPORTS
+# ==========================================
 
-
-# --- CONFIGURACIONES ---
+# Módulos Locales
 import Config
 
 
@@ -38,8 +32,6 @@ def _task_is_done(task_props):
     s = status_name.strip().lower().replace(" ","")
     return s == "done" or s.endswith(".done") or s in ("completado","completo")
 
-
-
 def find_property(properties, name):
     """
     Busca una propiedad de Notion por nombre ignorando mayúsc/minúsc/espacios.
@@ -55,9 +47,9 @@ def find_property(properties, name):
 
 def get_registros_hoy(database_id=Config.DATABASE_ID):
     """Obtiene registros RD del día actual."""
-    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
+    fecha_hoy = Config.datetime.now().strftime('%Y-%m-%d')
     query = {"filter": {"property": "Date","date":{"equals": fecha_hoy}}}
-    r = requests.post(f"https://api.notion.com/v1/databases/{database_id}/query",
+    r = Config.requests.post(f"https://api.notion.com/v1/databases/{database_id}/query",
                       headers=Config.HEADERS, json=query)
     data = r.json()
     return data.get('results', [])
@@ -65,10 +57,10 @@ def get_registros_hoy(database_id=Config.DATABASE_ID):
 # --- TELEGRAM ---
 
 async def enviar_a_telegram(mensaje_html, equipo=None):
-    bot = Bot(token=Config.TELEGRAM_TOKEN)
+    bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
     try:
         thread_id = Config.THREAD_IDS.get(equipo)
-        kwargs = {"chat_id": Config.CHAT_ID, "text": mensaje_html, "parse_mode": ParseMode.HTML}
+        kwargs = {"chat_id": Config.CHAT_ID, "text": mensaje_html, "parse_mode": Config.ParseMode.HTML}
         if thread_id: kwargs["message_thread_id"] = thread_id
         await bot.send_message(**kwargs)
     except Exception as e:
@@ -76,21 +68,20 @@ async def enviar_a_telegram(mensaje_html, equipo=None):
 
 
 
-import unicodedata
-import html
+
 
 def _normalize_text(s):
     """Quita diacríticos y pasa a minúsculas para comparar strings de estado."""
     if not s:
         return ""
     s = s.strip().lower()
-    s = unicodedata.normalize("NFD", s)
-    return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    s = Config.unicodedata.normalize("NFD", s)
+    return "".join(ch for ch in s if Config.unicodedata.category(ch) != "Mn")
 
 
 # --- ACTUALIZAR FIBACT --- 
 def actualizar_fibact(plan_id):
-    r = requests.get(f"https://api.notion.com/v1/pages/{plan_id}", headers=Config.HEADERS)
+    r = Config.requests.get(f"https://api.notion.com/v1/pages/{plan_id}", headers=Config.HEADERS)
     if r.status_code != 200:
         print(f"⚠️ Error obteniendo Plan {plan_id}: {r.text}")
         return 0, None, "Plan desconocido", None  # <-- ahora devuelve 4 valores
@@ -132,7 +123,7 @@ def actualizar_fibact(plan_id):
         tasks_relation = plan_props[field_key].get("relation", [])
         for t in tasks_relation:
             task_id = t["id"]
-            r_task = requests.get(f"https://api.notion.com/v1/pages/{task_id}", headers=Config.HEADERS)
+            r_task = Config.requests.get(f"https://api.notion.com/v1/pages/{task_id}", headers=Config.HEADERS)
             if r_task.status_code != 200:
                 print(f"⚠️ Error consultando tarea {task_id}: {r_task.text}")
                 continue
@@ -166,7 +157,7 @@ def actualizar_fibact(plan_id):
     # Actualizar Fibact en el PLAN
     if fibact_key:
         payload = {"properties": {fibact_key: {"number": total_fib}}}
-        r_patch = requests.patch(f"https://api.notion.com/v1/pages/{plan_id}", headers=Config.HEADERS, json=payload)
+        r_patch = Config.requests.patch(f"https://api.notion.com/v1/pages/{plan_id}", headers=Config.HEADERS, json=payload)
         print(f"[DEBUG] {plan_title} → Fibact {fibact_anterior} → {total_fib}, resp={r_patch.status_code}")
     else:
         print(f"⚠️ {plan_title} no tiene propiedad 'Fibact'. Debe agregarse manualmente en la base de datos.")
@@ -191,7 +182,7 @@ def actualizar_parcial(rd_registro):
 
     mn_relations = props_rd[mn_key].get("relation", [])
     for mn_ref in mn_relations:
-        r_mn = requests.get(f"https://api.notion.com/v1/pages/{mn_ref['id']}", headers=Config.HEADERS)
+        r_mn = Config.requests.get(f"https://api.notion.com/v1/pages/{mn_ref['id']}", headers=Config.HEADERS)
         if r_mn.status_code != 200:
             print(f"⚠️ Error obteniendo MN {mn_ref['id']}: {r_mn.text}")
             continue
@@ -213,7 +204,7 @@ def actualizar_parcial(rd_registro):
 
             # normalizar y formatear título según estado (usamos plan_estado)
             estado_norm = _normalize_text(plan_estado)
-            plan_title_esc = html.escape(plan_title)
+            plan_title_esc = Config.html.escape(plan_title)
 
             if "epica cerrada" in estado_norm:
                 plan_title_fmt = f"<s>✅ {plan_title_esc}</s>"
@@ -233,7 +224,7 @@ def actualizar_parcial(rd_registro):
     # Actualizar PARCIAL en el RD
     if parcial_key:
         payload = {"properties": {parcial_key: {"number": total_parcial}}}
-        r_patch = requests.patch(f"https://api.notion.com/v1/pages/{rd_registro['id']}",
+        r_patch = Config.requests.patch(f"https://api.notion.com/v1/pages/{rd_registro['id']}",
                                  headers=Config.HEADERS, json=payload)
         print(f"[DEBUG] RD {rd_registro['id']} → PARCIAL {parcial_anterior} → {total_parcial}, resp={r_patch.status_code}")
     else:
@@ -273,7 +264,7 @@ def actualizar_cant_integrantes(rd_registro, equipo):
 
     # Actualizar en Notion
     payload = {"properties": {cant_key: {"number": cantidad}}}
-    r_patch = requests.patch(f"https://api.notion.com/v1/pages/{rd_registro['id']}",
+    r_patch = Config.requests.patch(f"https://api.notion.com/v1/pages/{rd_registro['id']}",
                              headers=Config.HEADERS, json=payload)
     print(f"[DEBUG] RD {rd_registro['id']} → Cant. Integrantes {cant_anterior} → {cantidad}, resp={r_patch.status_code}")
 
@@ -310,7 +301,7 @@ async def burndown():
     return equipos_procesados
 
 def copiar_bloques_recursivo_completo(orig_id, target_id):
-    r = requests.get(f"https://api.notion.com/v1/blocks/{orig_id}/children", headers=Config.HEADERS)
+    r = Config.requests.get(f"https://api.notion.com/v1/blocks/{orig_id}/children", headers=Config.HEADERS)
     bloques = r.json().get('results', [])
     for bloque in bloques:
         bloque_nuevo = {"type": bloque['type']}
@@ -335,7 +326,7 @@ def copiar_bloques_recursivo_completo(orig_id, target_id):
         else:
             continue
 
-        post = requests.patch(f"https://api.notion.com/v1/blocks/{target_id}/children",
+        post = Config.requests.patch(f"https://api.notion.com/v1/blocks/{target_id}/children",
                               headers=Config.HEADERS, json={"children":[bloque_nuevo]})
         if post.status_code != 200:
             print("Error copiando bloque:", post.text)
@@ -350,7 +341,7 @@ def agregar_comentario_notion(page_id, texto):
         "parent": {"page_id": page_id},
         "rich_text": [{"type": "text", "text": {"content": texto}}]
     }
-    response = requests.post("https://api.notion.com/v1/comments", headers=Config.HEADERS, json=payload)
+    response = Config.requests.post("https://api.notion.com/v1/comments", headers=Config.HEADERS, json=payload)
     if response.status_code == 200:
         print(f"Comentario agregado a la página {page_id}")
     else:
@@ -370,21 +361,21 @@ def duplicar_registro_completo(registro):
             propiedades_nuevas[key] = {tipo: value[tipo]}
 
     # --- Fecha duplicado ---
-    hoy = datetime.now()
+    hoy = Config.datetime.now()
     if hoy.weekday() == 4:  # viernes
         dias_hasta_lunes = (7 - hoy.weekday()) % 7 or 7
-        fecha_duplicado = hoy + timedelta(days=dias_hasta_lunes)
+        fecha_duplicado = hoy + Config.timedelta(days=dias_hasta_lunes)
     else:
-        fecha_duplicado = hoy + timedelta(days=1)
+        fecha_duplicado = hoy + Config.timedelta(days=1)
     fecha_duplicado_str = fecha_duplicado.strftime('%Y-%m-%d')
 
     if 'Date' in propiedades_nuevas:
         propiedades_nuevas['Date']['date']['start'] = fecha_duplicado_str
         if 'end' in propiedades_nuevas['Date']['date'] and propiedades_nuevas['Date']['date']['end']:
             try:
-                end_dt = datetime.fromisoformat(propiedades_nuevas['Date']['date']['end'])
+                end_dt = Config.datetime.fromisoformat(propiedades_nuevas['Date']['date']['end'])
                 delta = end_dt.date() - hoy.date()
-                propiedades_nuevas['Date']['date']['end'] = (fecha_duplicado + timedelta(days=delta.days)).strftime('%Y-%m-%d')
+                propiedades_nuevas['Date']['date']['end'] = (fecha_duplicado + Config.timedelta(days=delta.days)).strftime('%Y-%m-%d')
             except Exception as e:
                 print("No se pudo mantener la duración del registro:", e)
 
@@ -393,7 +384,7 @@ def duplicar_registro_completo(registro):
     if icono:
         data['icon'] = icono
 
-    response = requests.post("https://api.notion.com/v1/pages", headers=Config.HEADERS, json=data)
+    response = Config.requests.post("https://api.notion.com/v1/pages", headers=Config.HEADERS, json=data)
     nueva_pagina = response.json()
     nueva_page_id = nueva_pagina['id']
 
@@ -411,17 +402,17 @@ def duplicar_registro_completo(registro):
 
 async def enviar_a_telegram(mensaje_html, equipo: str):
     print(f"Enviando comentario a Telegram para {equipo}...")
-    bot = Bot(token=Config.TELEGRAM_TOKEN)
+    bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
     try:
         thread_id = Config.THREAD_IDS.get(equipo)
         if not thread_id:
             print(f"⚠️ No se encontró thread_id para {equipo}, se enviará al chat principal.")
-            await bot.send_message(chat_id=Config.CHAT_ID_DEBUG, text=mensaje_html, parse_mode=ParseMode.HTML)
+            await bot.send_message(chat_id=Config.CHAT_ID_DEBUG, text=mensaje_html, parse_mode=Config.ParseMode.HTML)
         else:
             await bot.send_message(
                 chat_id=Config.CHAT_ID,
                 text=mensaje_html,
-                parse_mode=ParseMode.HTML,
+                parse_mode=Config.ParseMode.HTML,
                 message_thread_id=thread_id
             )
     except Exception as e:
@@ -430,7 +421,7 @@ async def enviar_a_telegram(mensaje_html, equipo: str):
 def actualizar_type_spc(registro):
     propiedades = {"Type": {"multi_select": [{"name": "SPC"}]}}
     page_id = registro['id']
-    response = requests.patch(f"https://api.notion.com/v1/pages/{page_id}",
+    response = Config.requests.patch(f"https://api.notion.com/v1/pages/{page_id}",
                               headers=Config.HEADERS, json={"properties": propiedades})
     print(f"Registro {page_id} actualizado a solo 'SPC':", response.status_code)
     return response.json()
@@ -486,7 +477,7 @@ async def listar_planes():
         total_fibs = 0
 
         for mn_ref in mn_relations:
-            r_mn = requests.get(f"https://api.notion.com/v1/pages/{mn_ref['id']}", headers=Config.HEADERS)
+            r_mn = Config.requests.get(f"https://api.notion.com/v1/pages/{mn_ref['id']}", headers=Config.HEADERS)
             if r_mn.status_code != 200:
                 continue
             mn_registro = r_mn.json()
@@ -498,7 +489,7 @@ async def listar_planes():
             for plan in mn_registro["properties"][plan_key].get("relation", []):
                 plan_id = plan["id"]
                 # Obtener datos del plan directamente
-                r_plan = requests.get(f"https://api.notion.com/v1/pages/{plan_id}", headers=Config.HEADERS)
+                r_plan = Config.requests.get(f"https://api.notion.com/v1/pages/{plan_id}", headers=Config.HEADERS)
                 if r_plan.status_code != 200:
                     continue
                 plan_json = r_plan.json()
@@ -507,7 +498,7 @@ async def listar_planes():
                 # Obtener título del plan
                 title_prop = find_property(plan_props, "Name") or find_property(plan_props, "Nombre")
                 plan_title = "".join([t.get("plain_text", "") for t in plan_props.get(title_prop, {}).get("title", [])]).strip() or "Plan desconocido"
-                plan_title_esc = html.escape(plan_title[:200]) + ("" if len(plan_title) > 200 else "")
+                plan_title_esc = Config.html.escape(plan_title[:200]) + ("" if len(plan_title) > 200 else "")
 
                 # Generar link clickeable
                 plan_url = f"https://www.notion.so/{plan_id.replace('-', '')}"
