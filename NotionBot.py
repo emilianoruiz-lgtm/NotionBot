@@ -39,7 +39,8 @@ from telegram.ext import (
     ConversationHandler,
     filters,
     ContextTypes,
-    JobQueue
+    JobQueue,
+    CallbackContext
 )
 
 
@@ -52,8 +53,6 @@ from modules.AgendaHoy import agendahoy
 from modules.AgendaPlAdmin import AgendaPlAdmin
 from modules.AgendaSemProx import AgendaPlAdminSemanaSiguiente
 from modules.RDs import RDs_comments
-from modules.DayIN import DayIN, DayInEquipo
-from modules.DayOUT import DayOUT, DayOutTest, DayOutEquipo
 from modules.Burn import burndown, newday, listar_planes
 from modules.SiemensCheck import parsear_oferta_robusto, exportar_excel, parsear_briket
 from modules.mundopizza.menump import (
@@ -67,7 +66,7 @@ from modules.jobs import (
 )
 
 from modules.handlers import (
-    conv_equipos, conv_torneo, conv_dayin, conv_dayout, conv_dayout_test,
+    conv_dayin, conv_dayout, conv_dayout_test,
     wrap_handler, confirmar_handler, generic_message, cancelar
 )
 
