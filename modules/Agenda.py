@@ -55,6 +55,31 @@ def get_registros_manana_calendar():
     return registros_filtrados
 
 # --- FUNCIONES AUXILIARES ---
+def get_alias(nombre):
+    return Config.ALIAS_PERSONAS.get(nombre, nombre)
+
+def get_personas(props):
+    personas = props.get('Person', {}).get('people', [])
+    nombres = [p.get('name', '') for p in personas if p.get('name')]
+    return [get_alias(n) for n in nombres]
+
+
+def get_tipo(props):
+    tipo = "Sin tipo"
+    tipo_prop = props.get('Tipo')
+    if tipo_prop:
+        if tipo_prop.get('select'):
+            tipo = tipo_prop['select'].get('name', 'Sin tipo')
+        elif tipo_prop.get('multi_select'):
+            if tipo_prop['multi_select']:
+                tipo = tipo_prop['multi_select'][0].get('name', 'Sin tipo')
+        elif tipo_prop.get('rollup'):
+            arr = tipo_prop['rollup'].get('array', [])
+            if arr:
+                tipo = arr[0].get('name', 'Sin tipo')
+    return tipo
+
+
 def format_linea(r):
     props = r['properties']
 
@@ -73,10 +98,17 @@ def format_linea(r):
 
     # --- Título visible ---
     titulo = tipo
-    if tipo in Config.TIPOS_SIN_INICIO_OFICINA:
-        titulo_prop = props.get('Name', {}).get('title', [])
-        if titulo_prop:
-            titulo = "".join([t['plain_text'] for t in titulo_prop])
+
+    # Nombre de personas
+    personas = props.get('Person', {}).get('people', [])
+    nombres_personas = ", ".join([p.get('name', '') for p in personas if p.get('name')])
+
+    # Caso AUSENTE → "Persona – Tipo"
+    if tipo in Config.TIPOS_SIN_ARRANQUE_NORMAL:
+        if nombres_personas:
+            titulo = f"{nombres_personas} – {tipo}"
+        else:
+            titulo = tipo
 
     # --- Cliente ---
     cliente_texto = ""
@@ -132,13 +164,7 @@ def format_linea(r):
     linea = f"<b>{linea_principal}</b>\n{persona_texto}"
     return linea
 
-# --- RESUMEN PRINCIPAL ---
-def resumen_calendar(registros):
-    """Genera un resumen completo con apartados por equipo, General y No inicia jornada"""
-    resumen_lines = [f"📅 <b>AGENDA DEL DÍA {fecha_manana}</b>"]
-
-    # --- Función auxiliar para obtener fecha/hora ---
-    def fecha_inicio(r):
+def fecha_inicio(r):
         date_prop = r['properties'].get('Date', {}).get('date', {})
         if date_prop and date_prop.get('start'):
             try:
@@ -147,13 +173,19 @@ def resumen_calendar(registros):
                 return Config.datetime.max
         return Config.datetime.max
 
-    registros.sort(key=fecha_inicio)
+def titulo_con_guiones(nombre, total=30):
+    base = f"{nombre} "
+    return base + "-" * max(0, total - len(base))
 
+# --- RESUMEN PRINCIPAL ---
+def resumen_calendar(registros, fecha):
+    fecha_str = fecha.strftime("%d-%m-%Y")
+    resumen_lines = [f"📅 <b>AGENDA {fecha_str}</b>"]
+    registros.sort(key=fecha_inicio)
     equipos_dict = {}
 
     for r in registros:
         props = r['properties']
-
         # --- Extraer tipo ---
         tipo = "Sin tipo"
         tipo_prop = props.get('Tipo')
@@ -166,22 +198,27 @@ def resumen_calendar(registros):
                 rollup = tipo_prop['rollup']
                 if 'array' in rollup and len(rollup['array']) > 0:
                     tipo = rollup['array'][0].get('name', 'Sin tipo')
-
         tipo_lower = tipo.lower()
 
-        # --- 1️⃣ Si está en TIPOS_SIN_INICIO_OFICINA → siempre va a "No inicia jornada" ---
-        if tipo in Config.TIPOS_SIN_INICIO_OFICINA:
-            equipos_dict.setdefault("No inicia jornada en la oficina", []).append(r)
+
+        if tipo in Config.TIPOS_SIN_ARRANQUE_NORMAL:
+            equipos_dict.setdefault("Ausente", []).append(r)
             continue
 
-        # --- 2️⃣ Si es Evento Personal o Evento EPROC, evaluar hora de inicio ---
+        if tipo in Config.TIPOS_ARRANQUE_REMOTO:
+            equipos_dict.setdefault("Inicio remoto", []).append(r)
+            continue
+
+        if tipo in Config.TIPOS_GUARDIA:
+                equipos_dict.setdefault("Guardia", []).append(r)
+                continue
+
         if tipo_lower in [t.lower() for t in ["Evento Personal", "Evento EPROC"]]:
             date_prop = props.get('Date', {}).get('date', {})
             hora_ok = None
             if date_prop and date_prop.get('start'):
                 try:
                     dt_start = Config.dateutil.parser.isoparse(date_prop['start'])
-                    # Convertir siempre a hora de Argentina
                     if dt_start.tzinfo is None:
                         dt_start = Config.ARG_TZ.localize(dt_start)
                     else:
@@ -189,10 +226,8 @@ def resumen_calendar(registros):
                     hora_ok = dt_start.hour * 60 + dt_start.minute
                 except:
                     hora_ok = None
-
-            # Si empieza temprano → “No inicia jornada”
             if hora_ok is None or hora_ok <= (8 * 60 + Config.MARGEN_MINUTOS):
-                equipos_dict.setdefault("No inicia jornada en la oficina", []).append(r)
+                equipos_dict.setdefault("Ausente", []).append(r)
                 continue
 
         # --- 3️⃣ En cualquier otro caso, agrupar por equipo o General ---
@@ -202,40 +237,87 @@ def resumen_calendar(registros):
             equipos_dict.setdefault(eq, []).append(r)
 
     # --- Asegurar categorías base ---
-    equipos_dict.setdefault("No inicia jornada en la oficina", [])
+    equipos_dict.setdefault("Ausente", [])
+    equipos_dict.setdefault("Inicio remoto", [])
     equipos_dict.setdefault("General", [])
+    equipos_dict.setdefault("Guardia", [])
 
     # --- Orden de apartados ---
-    apartados_orden = ["No inicia jornada en la oficina"] + \
-                      [e for e in equipos_dict if e not in ["No inicia jornada en la oficina", "General"]] + \
-                      ["General"]
+    apartados_orden = ["Ausente"] + ["Inicio remoto"] + \
+                      [e for e in equipos_dict if e not in ["Ausente", "Inicio remoto", "General", "Guardia"]] + \
+                      ["General"] + ["Guardia"]
 
     #  --- Construcción del resumen ---
     for equipo in apartados_orden:
-        regs = equipos_dict[equipo]
+        regs = equipos_dict.get(equipo, [])
 
-        team_cfg = Config.EQUIPOS_CONFIG.get(equipo, {})
+        if equipo == "General" and not regs:
+            continue
+
         emojiteam, nombre_mostrar = get_team_config(equipo)
+        titulo = titulo_con_guiones(nombre_mostrar)
 
-        resumen_lines.append(
-            f"\n<b>{emojiteam} {nombre_mostrar}</b>\n{Config.DEFAULT_SEPARATOR}"
-        )
+        resumen_lines.append(f"\n<b>{emojiteam} {titulo}</b>")
 
         if regs:
             regs.sort(key=fecha_inicio)
+
             for r in regs:
-                resumen_lines.append(format_linea(r))
+                props = r['properties']
+                tipo = get_tipo(props)
+                personas = get_personas(props)
+
+                for p in personas or ["Sin persona"]:
+                    resumen_lines.append(f"      {p} – {tipo}")
         else:
             resumen_lines.append(Config.NO_REGISTROS_TEXT)
 
     return "\n".join(resumen_lines)
 
-
-
-# --- SCRIPT PRINCIPAL ---
 async def generar_resumen_manana():
     registros_manana = get_registros_manana_calendar()
     resumen = resumen_calendar(registros_manana)
     return resumen
 
+def get_registros_calendar_por_fecha(fecha_dt):
+    registros = []
+    has_more = True
+    next_cursor = None
 
+    while has_more:
+        query = {"page_size": 100}
+        if next_cursor:
+            query["start_cursor"] = next_cursor
+
+        response = Config.requests.post(
+            f"https://api.notion.com/v1/databases/{Config.DATABASE_ID_CALENDAR}/query",
+            headers=Config.HEADERS,
+            json=query
+        )
+        data = response.json()
+        registros.extend(data.get('results', []))
+        has_more = data.get('has_more', False)
+        next_cursor = data.get('next_cursor')
+
+    registros_filtrados = []
+    for r in registros:
+        date_prop = r['properties'].get('Date', {}).get('date')
+        if not date_prop or not date_prop.get('start'):
+            continue
+
+        start_dt = Config.dateutil.parser.isoparse(date_prop['start']).date()
+        end_dt = (
+            Config.dateutil.parser.isoparse(date_prop['end']).date()
+            if date_prop.get('end')
+            else start_dt
+        )
+
+        if start_dt <= fecha_dt <= end_dt:
+            registros_filtrados.append(r)
+
+    return registros_filtrados
+
+async def AgendaMenu(fecha):
+    registros = get_registros_calendar_por_fecha(fecha)
+    resumen = resumen_calendar(registros, fecha)
+    return resumen

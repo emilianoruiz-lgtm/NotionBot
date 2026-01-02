@@ -50,12 +50,11 @@ from telegram.ext import (
     CallbackContext
 )
 
-
-
-
+# ==========================================
+# 2. CONSTANTES
+# ==========================================
 
 ARG_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
-
 
 # --- CONFIGURACIONES ---  
 NOTION_TOKEN = 'ntn_z56874457011Hz0DyovlmyTUziM3ZwHBROzP8npgSgJ5gB'
@@ -108,29 +107,25 @@ TASK_FIELDS = [
 
 EQUIPOS_CONFIG = {
     "General": {
-        "emoji": "📌",
+        "emoji": "",
         "display_name": "General",
     },
-    "No inicia jornada en la oficina": {
-        "emoji": "📍",
-        "display_name": "No inicia jornada\n        en la oficina",
-    },
     "Huemules": {
-        "emoji": "🫎",
+        "emoji": "",
         "display_name": "Huemules",
     },
     "Zorros": {
-        "emoji": "🦊",
+        "emoji": "",
         "display_name": "Zorros",
     },
     "Caimanes": {
-        "emoji": "🐊",
+        "emoji": "",
         "display_name": "Caimanes",
     },
 }
 
 # Defaults
-DEFAULT_TEAM_EMOJI = "🤌"
+DEFAULT_TEAM_EMOJI = ""
 DEFAULT_SEPARATOR = "-" * 46
 NO_REGISTROS_TEXT = "      - No hay registros"
 
@@ -195,9 +190,17 @@ TIPOS_SIN_CLIENTE = [
     "Licencia", "Evento Personal", "Evento EPROC", "Enfermo", "Reunión interna", "Home Office"
 ]
 
-TIPOS_SIN_INICIO_OFICINA = [
+TIPOS_SIN_ARRANQUE_NORMAL = [
     "Franco", "Día de estudio", "Vacaciones",
-    "Licencia", "Evento Personal", "Evento EPROC", "Enfermo", "Home Office"
+    "Licencia", "Evento Personal", "Enfermo"
+]
+
+TIPOS_ARRANQUE_REMOTO = [
+    "Home Office", "Evento EPROC"
+]
+
+TIPOS_GUARDIA = [
+    "Guardia 60%", "Guardia 40%", "Guardia 100%"
 ]
 
 # ⏱️ Margen en minutos para considerar que un evento temprano significa "No inicia jornada"

@@ -24,7 +24,7 @@ from modules.jobs import (
 )
 
 from modules.handlers import (
-    conv_dayin, conv_dayout, conv_dayout_test,
+    conv_dayin, conv_dayout, conv_dayout_test,conv_agenda,
     wrap_handler, confirmar_handler, generic_message, cancelar
 )
 
@@ -717,6 +717,7 @@ if __name__ == "__main__":
     app.add_handler(conv_dayout_test)
     app.add_handler(conv_sethorario)
     app.add_handler(conv_setmp)
+    app.add_handler(conv_agenda)
     
     # Comandos con Wrap general "Ejecutando tarea"
     app.add_handler(Config.CommandHandler("debugjobs", wrap_handler(debug_jobs)))
