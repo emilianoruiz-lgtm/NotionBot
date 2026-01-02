@@ -416,7 +416,7 @@ async def curva_parcial_zorro(update: Config.Update, context: Config.ContextType
         caption=f"📊 Burndown Zorro actual"
     )
 
-async def newburnreg(update: Config.pdate, context: Config.ContextTypes.DEFAULT_TYPE):
+async def newburnreg(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
     print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Newday manual")
     await update.message.reply_text("⚡ Ejecutando tarea...", parse_mode="HTML")
     await newday()
