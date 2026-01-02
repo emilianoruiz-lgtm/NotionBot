@@ -38,7 +38,7 @@ THREAD_IDS = {
     "Preliminar Agenda": 16
 }
 
-CHAT_ID = CHAT_ID_DEBUG
+CHAT_ID = CHAT_ID_LOG
 
 HEADERS = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
@@ -105,27 +105,18 @@ ALIAS_PERSONAS = {
     "Darío De Caneva": "DPD",
     "Victoria ": "MVL",
     "Luciano Crovetto": "LCR",
-    "Valentin Bellini": "VAB",
-    "Valentín Bellini": "VAB",
     "Federico Accurso": "FAC",
     "Baltasar Olle": "BOL",
     "Baltasar Ollé": "BOL",
     "Lisandro Luna": "LDL",
     "Marcos Casas": "MAC",
     "Ian Reyes": "IDR",
-    "Nicolas Cappello": "NKP",
-    "Nicolás Cappello": "NKP",
     "Bernardo Eppenstein": "BPE",
     "Carla Carucci": "CCA"
 }
 
 # Lista de feriados (ejemplo, completala según tu caso)
-FERIADOS = {
-    # Feriados 2025 (ya existentes)
-    date(2025, 1, 1), date(2025, 3, 24), date(2025, 5, 1),
-    date(2025, 5, 25), date(2025, 6, 20), date(2025, 7, 9),
-    date(2025, 10, 10), date(2025, 12, 25),
-    
+FERIADOS = {   
     # Feriados de Argentina 2026 🇦🇷
     date(2026, 1, 1),   # Año Nuevo
     date(2026, 2, 16),  # Lunes de Carnaval
@@ -145,19 +136,6 @@ FERIADOS = {
     date(2026, 12, 25), # Navidad
 }
 
-FRASES_VARIADAS = [
-    "🤔 Sería útil comentar/recordar en la RD si hay algún impedimento o apoyo necesario para avanzar más rápido en esta tarea.",
-    "💡 Tal vez convenga mencionar/recordar en la RD si hay algún bloqueo o ayuda que pueda destrabar el avance.",
-    "🔎 No estaría de más revisar/recordar en la RD si esta tarea requiere algún tipo de apoyo adicional.",
-    "📌 Podría ser valioso señalar/recordar en la RD si hay factores que estén demorando el progreso.",
-    "🛠️ Recordar comentar/recordar en la RD si necesitan soporte o hay algún impedimento que dificulte continuar.",
-    "🚧 Conviene aclarar/recordar en la RD si existen obstáculos que estén frenando el avance.",
-    "🗣️ Sería bueno mencionar/recordar en la RD si se requiere colaboración de alguien para poder seguir.",
-    "📣 Vale la pena destacar/recordar en la RD si hay dependencias externas que estén trabando esta actividad.",
-    "🕵️‍♂️ Podría ser útil comentar/recordar en la RD si se identificó algún punto crítico que afecte el progreso.",
-    "🤝 No olvidemos mencionar/recordar en la RD si se necesita apoyo del equipo o de otra área para avanzar."
-]
-
 
 TIPOS_SIN_CLIENTE = [
     "Franco", "Cumpleaños", "Día de estudio", "Vacaciones",
@@ -172,9 +150,7 @@ TIPOS_SIN_INICIO_OFICINA = [
 # ⏱️ Margen en minutos para considerar que un evento temprano significa "No inicia jornada"
 MARGEN_MINUTOS = 15
 
-
 DONE_STATUS_NAMES = {"done", "hecho", "finalizado", "listo", "completado", "closed", "cerrado"}
-
 
 DEBUG = True  # Cambiar a False en producción
 
