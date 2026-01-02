@@ -11,7 +11,6 @@ from modules.DayOUT import DayOUT, DayOutEquipo
 from modules.Burn import burndown, newday
 from modules.RDs import RDs_comments
 from modules.Agenda import generar_resumen_manana
-from modules.Ranking import RankingELO
 from modules.mundopizza.menump import get_menu_text
 from modules.AgendaSemProx import AgendaPlAdminSemanaSiguiente
 
@@ -224,26 +223,6 @@ async def job_pay(context: CallbackContext):
         print(f"❌ Error en job_pay: {e}")
 
 
-# ============================
-# JOB RANK REMINDER
-# ============================
-async def job_rank(context: CallbackContext):
-    ahora = datetime.now(TZ)
 
-    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
-        print(f"⚠️[DEBUG] rank no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
-        return
-
-    try:
-        print(f"📤 job_rank disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
-        resultado = await RankingELO()
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_TEAM,
-            text=f"{resultado}",
-            parse_mode="HTML"
-        )
-        print("📤 Mensaje de rank reminder enviado")
-    except Exception as e:
-        print(f"❌ Error en job_rank: {e}")
 
 

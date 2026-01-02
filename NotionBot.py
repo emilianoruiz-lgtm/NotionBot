@@ -53,7 +53,7 @@ from modules.AgendaHoy import agendahoy
 from modules.AgendaPlAdmin import AgendaPlAdmin
 from modules.AgendaSemProx import AgendaPlAdminSemanaSiguiente
 from modules.RDs import RDs_comments
-from modules.Burn import burndown, newday, listar_planes
+Rankfrom modules.Burn import burndown, newday, listar_planes
 from modules.SiemensCheck import parsear_oferta_robusto, exportar_excel, parsear_briket
 from modules.mundopizza.menump import (
     mostrar_menu, setmp_start, elegir_item, elegir_precio, cancelar_setmp, 

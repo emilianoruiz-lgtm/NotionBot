@@ -10,7 +10,7 @@ import Config
 import re
 from modules.jobs import (
     job_dayin, job_rd, job_burn, job_agenda_preliminar, job_agenda_automatica,
-    job_dayout, job_newday, job_food, job_rank, job_pay,job_agenda_semana_prox
+    job_dayout, job_newday, job_food, job_pay,job_agenda_semana_prox
 )
 
 # Configura logging
@@ -43,7 +43,6 @@ TAREAS_MAP = {
     "DayOUT": "hora_dayout",
     "NewDay": "hora_newday",
     "food": "hora_food",
-    "rank": "hora_rank",
     "pay": "hora_pay",
 }
 
@@ -61,7 +60,6 @@ JOB_MAP = {
     "hora_dayout": job_dayout,
     "hora_newday": job_newday,
     "hora_food": job_food,
-    "hora_rank": job_rank,
     "hora_pay": job_pay,
 }
 
