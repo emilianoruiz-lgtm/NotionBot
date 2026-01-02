@@ -130,11 +130,7 @@ def tzutil_get_zone():
     try:
         result = subprocess.run(['tzutil', '/g'], capture_output=True, text=True, check=True)
         windows_tz = result.stdout.strip()
-        # Map Windows timezone to IANA
-        tz_map = {
-            "Argentina Standard Time": "America/Argentina/Buenos_Aires",
-            # Add other mappings if needed
-        }
+        tz_map = {"Argentina Standard Time": "America/Argentina/Buenos_Aires",}
         return tz_map.get(windows_tz, windows_tz)
     except subprocess.CalledProcessError:
         return "Unknown"
@@ -272,7 +268,6 @@ async def manejar_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         import pdfplumber
         with pdfplumber.open(pdf_path) as pdf:
             texto = "\n".join([p.extract_text() or "" for p in pdf.pages])
-
         if "ARQ" in texto:
             items = parsear_oferta_robusto(pdf_path)
             nombre = re.search(r"ARQ\d+", texto).group(0)
@@ -283,7 +278,6 @@ async def manejar_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ No reconozco el tipo de PDF.")
             return
-
         exportar_excel(items, excel_path)
         with open(excel_path, "rb") as f:
             await update.message.reply_document(f)
@@ -293,24 +287,20 @@ async def manejar_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         if os.path.exists(pdf_path): os.remove(pdf_path)
 
-# --- Comandos de Curvas ---
 async def curva_parcial(update, context):
     await update.message.reply_text("📈 Generando curvas...")
     buf = await generar_curva_parcial()
     await context.bot.send_photo(update.effective_chat.id, photo=InputFile(buf, "curva.png"), caption="📊 Burndown actual")
 
-# --- Comandos de Gestión ---
 async def burn(update, context):
     await update.message.reply_text("⚡ Ejecutando Burndown...")
     await burndown()
     await update.message.reply_text("✔️ Procesado.")
 
-
 async def hoy(update, context):
     resultado = await agendahoy()
     if resultado: await safe_send_message(context.bot, update.effective_chat.id, resultado)
     else: await update.message.reply_text("⚠️ Nada hoy.")
-
 
 # ==========================================
 # 7. GESTIÓN DE JOBS Y HORARIOS
@@ -352,7 +342,6 @@ async def safe_job_runner(ctx, job_func, job_name, grace_period=300):
                 pass
     finally:
         print(f"[JOB] ⏹ '{job_name}' terminado.\n", flush=True)
-
 
 async def clear_jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     job_queue = context.job_queue
@@ -411,20 +400,9 @@ def schedule_daily_job(app, job_func, job_time, days=(0, 1, 2, 3, 4), job_name="
 
 async def job_restart(context: ContextTypes.DEFAULT_TYPE):
     print("♻️ Reiniciando bot automáticamente...")
-    # Espera un par de segundos para liberar recursos
     await asyncio.sleep(2)
-    # Lanza un nuevo proceso del mismo script
     os.execv(sys.executable, ['python'] + sys.argv)
 
-async def job_callback(context: ContextTypes.DEFAULT_TYPE):
-    job = context.job
-    now = datetime.now().strftime("%H:%M:%S")
-    await context.bot.send_message(job.chat_id, text=f"⏰ Job ejecutado a las {now}")
-
-
-def default_job_logger(message: str):
-    # pequeña util para timestamp en prints
-    print(f"[JOB] {_time.strftime('%Y-%m-%d %H:%M:%S')} - {message}", flush=True)
 
 # ==========================================
 # 8. CONVERSATION HANDLERS
