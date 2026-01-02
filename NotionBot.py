@@ -953,7 +953,7 @@ if __name__ == "__main__":
     sync_system_time()
 
     app = Application.builder().token(Config.TELEGRAM_TOKEN).build()
-    app.add_error_handler(error_handler)
+   
 
     # Configurar handlers
     app.add_handler(conv_equipos)
@@ -978,7 +978,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("rd2", wrap_handler(rd2)))
     app.add_handler(confirmar_handler("burn", burn))
     app.add_handler(confirmar_handler("newday", newburnreg))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generic_message))
+    
 
     app.add_handler(CommandHandler("mp", mostrar_menu))
     app.add_handler(CommandHandler("curvas", wrap_handler(curva_parcial)))
@@ -988,8 +988,10 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.Document.PDF, manejar_pdf))
 
     app.add_handler(CommandHandler("ChatID", chatid))
+    app.add_handler(CommandHandler("ping", wrap_handler(ping)))
 
-    app.add_handler(CommandHandler("ping", ping))
+    #app.add_error_handler(error_handler)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generic_message))
 
     # Programar todos los jobs
     jobs_to_schedule = [
