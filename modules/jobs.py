@@ -13,13 +13,13 @@ from modules.mundopizza.menump import get_menu_text
 from modules.AgendaSemProx import AgendaPlAdminSemanaSiguiente
 
 
-ahora = Config.atetime.now(Config.ARG_TZ)
+ahora = Config.datetime.now(Config.ARG_TZ)
 
 
 def is_weekday(date_to_check: Config.datetime) -> bool:
     return date_to_check.weekday() in (0, 1, 2, 3, 4)
 
-def is_friday(date_to_check: Config.atetime) -> bool:
+def is_friday(date_to_check: Config.datetime) -> bool:
     return date_to_check.weekday() == 4
 
 # ============================
