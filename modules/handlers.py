@@ -5,24 +5,14 @@
 # Módulos Locales
 import Config
 from modules.DayIN import DayIN, DayInEquipo
-from modules.Agenda import AgendaMenu
-from modules.DayOUT import (
-    DayOUT,
-    DayOutTest,
-    DayOutEquipo,
-    DayOutProcesar,
-)
+
 
 # ==========================================
 # CONSTANTES
 # ==========================================
 
 CONFIRMAR = 999
-
 ESPERANDO_EQUIPO_DAYIN = 100
-ESPERANDO_EQUIPO_DAYOUT = 200
-ESPERANDO_EQUIPO_DAYOUT_TEST = 201
-ESPERANDO_FECHA_AGENDA = 300
 
 # ==========================================
 # HELPERS GENERALES
@@ -123,143 +113,6 @@ def create_team_keyboard(include_todos=False):
 
     return Config.InlineKeyboardMarkup(keyboard)
 
-def create_agenda_keyboard():
-    keyboard = [
-        [
-            Config.InlineKeyboardButton("📅 Antes de ayer", callback_data="agenda_antesayer"),
-        ],
-        [
-            Config.InlineKeyboardButton("📅 Ayer", callback_data="agenda_ayer"),
-        ],
-        [
-            Config.InlineKeyboardButton("📅 Hoy", callback_data="agenda_hoy"),
-        ],
-        [
-            Config.InlineKeyboardButton("📅 Mañana", callback_data="agenda_manana"),
-        ],
-        [
-            Config.InlineKeyboardButton("📅 Pasado mañana", callback_data="agenda_pasadomanana"),
-        ],
-        [
-            Config.InlineKeyboardButton("Cancelar", callback_data="agenda_cancelar"),
-        ],
-    ]
-    return Config.InlineKeyboardMarkup(keyboard)
-
-
-# ==========================================
-# CONVERSACIÓN /DAYOUT
-# ==========================================
-
-async def start_dayout(update: Config.Update, context: Config.CallbackContext):
-    await update.message.reply_text(
-        "📋 DayOUT:",
-        reply_markup=create_team_keyboard(),
-    )
-    return ESPERANDO_EQUIPO_DAYOUT
-
-
-async def recibir_equipo_dayout(update: Config.Update, context: Config.CallbackContext):
-    query = update.callback_query
-    await query.answer()
-
-    equipo = query.data.replace("team_", "")
-
-    if equipo == "Cancelar":
-        await query.message.reply_text("❌ Operación cancelada.")
-        return Config.ConversationHandler.END
-
-    async with Config.aiohttp.ClientSession() as session:
-        if equipo == "Todos":
-            await query.message.reply_text("⚡ Ejecutando DayOUT de todos los equipos...")
-            resultados = await DayOutProcesar(session, Config.EQUIPOS)
-            await query.message.reply_text(
-                "✔️ DayOUT de TODOS los equipos publicado en Notion\n\n"
-                + "\n".join(resultados)
-            )
-        else:
-            await query.message.reply_text(f"⚡ Ejecutando DayOUT de {equipo}...")
-            resultados = await DayOutProcesar(session, [equipo])
-            await query.message.reply_text(
-                f"✔️ DayOUT de {equipo} publicado en Notion\n\n"
-                + "\n".join(resultados)
-            )
-
-    return Config.ConversationHandler.END
-
-
-conv_dayout = Config.ConversationHandler(
-    entry_points=[Config.CommandHandler("dayout", start_dayout)],
-    states={
-        ESPERANDO_EQUIPO_DAYOUT: [
-            Config.CallbackQueryHandler(recibir_equipo_dayout, pattern="^team_")
-        ]
-    },
-    fallbacks=[Config.CommandHandler("cancelar", cancelar)],
-)
-
-async def start_agenda(update: Config.Update, context: Config.CallbackContext):
-    await update.message.reply_text(
-        "📋 ¿Qué agenda querés consultar?",
-        reply_markup=create_agenda_keyboard(),
-    )
-    return ESPERANDO_FECHA_AGENDA
-
-# ==========================================
-# CONVERSACIÓN /DAYOUTTEST
-# ==========================================
-
-async def start_dayout_test(update: Config.Update, context: Config.CallbackContext):
-    await update.message.reply_text(
-        "📋 DayOUT de prueba:",
-        reply_markup=create_team_keyboard(),
-    )
-    return ESPERANDO_EQUIPO_DAYOUT_TEST
-
-
-async def recibir_equipo_dayout_test(update: Config.Update, context: Config.CallbackContext):
-    query = update.callback_query
-    await query.answer()
-
-    equipo = query.data.replace("team_", "")
-
-    if equipo == "Cancelar":
-        await query.message.reply_text("❌ Operación cancelada.")
-        return Config.ConversationHandler.END
-
-    async with Config.aiohttp.ClientSession() as session:
-        if equipo == "Todos":
-            await query.message.reply_text(
-                "⚡ Ejecutando DayOUT de prueba de todos los equipos..."
-            )
-            for eq in Config.EQUIPOS:
-                await DayOutTest(update, session, eq)
-            await query.message.reply_text(
-                "✔️ DayOUT de prueba de TODOS los equipos enviado"
-            )
-        else:
-            await query.message.reply_text(
-                f"⚡ Ejecutando DayOUT de prueba de {equipo}..."
-            )
-            await DayOutTest(update, session, equipo)
-            await query.message.reply_text(
-                f"✔️ DayOUT de prueba de {equipo} enviado"
-            )
-
-    return Config.ConversationHandler.END
-
-
-conv_dayout_test = Config.ConversationHandler(
-    entry_points=[Config.CommandHandler("dayouttest", start_dayout_test)],
-    states={
-        ESPERANDO_EQUIPO_DAYOUT_TEST: [
-            Config.CallbackQueryHandler(
-                recibir_equipo_dayout_test, pattern="^team_"
-            )
-        ]
-    },
-    fallbacks=[Config.CommandHandler("cancelar", cancelar)],
-)
 
 
 # ==========================================
@@ -324,60 +177,3 @@ async def dayin(update: Config.Update, context: Config.CallbackContext):
         parse_mode=Config.ParseMode.HTML,
     )
 
-
-# ==========================================
-# CONVERSACIÓN SELECCIÓN DE AGENDA
-# ==========================================
-async def recibir_fecha_agenda(update: Config.Update, context: Config.CallbackContext):
-    query = update.callback_query
-    await query.answer()
-
-    data = query.data
-
-    if data == "agenda_cancelar":
-        await query.message.reply_text("❌ Operación cancelada.")
-        return Config.ConversationHandler.END
-
-    hoy = Config.date.today()
-
-    if data == "agenda_antesayer":
-        fecha = hoy - Config.timedelta(days=2)
-        titulo = "ANTES DE AYER"
-    elif data == "agenda_ayer":
-        fecha = hoy - Config.timedelta(days=1)
-        titulo = "AYER"
-    elif data == "agenda_hoy":
-        fecha = hoy
-        titulo = "HOY"
-    elif data == "agenda_manana":
-        fecha = hoy + Config.timedelta(days=1)
-        titulo = "MAÑANA"
-    elif data == "agenda_pasadomanana":
-        fecha = hoy + Config.timedelta(days=2)
-        titulo = "PASADO MAÑANA"
-    else:
-        await query.message.reply_text("⚠️ Opción inválida.")
-        return Config.ConversationHandler.END
-
-    await query.message.reply_text(f"Revisando calendario...")
-
-    resultado = await AgendaMenu(fecha)
-
-    await query.message.reply_text(
-        resultado,
-        parse_mode=Config.ParseMode.HTML,
-    )
-
-    return Config.ConversationHandler.END
-
-conv_agenda = Config.ConversationHandler(
-    entry_points=[Config.CommandHandler("agenda", start_agenda)],
-    states={
-        ESPERANDO_FECHA_AGENDA: [
-            Config.CallbackQueryHandler(
-                recibir_fecha_agenda, pattern="^agenda_"
-            )
-        ]
-    },
-    fallbacks=[Config.CommandHandler("cancelar", cancelar)],
-)

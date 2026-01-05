@@ -55,17 +55,13 @@ from telegram.ext import (
 # ==========================================
 
 ARG_TZ = ZoneInfo("America/Argentina/Buenos_Aires")
-
-# --- CONFIGURACIONES ---  
+  
 NOTION_TOKEN = 'ntn_z56874457011Hz0DyovlmyTUziM3ZwHBROzP8npgSgJ5gB'
 DATABASE_ID = '246152ff88c58000aff8fe2a4b2e25b6'       # BURN
 DATABASE_ID_PLAN = "238152ff88c580aaa659d59eba57e932"  # PLAN
 DATABASE_ID_SPRINTS = "24e152ff88c58044a30bcf52a44f2ecd" #SPRINTS
 DATABASE_ID_CALENDAR = '7eb7b4c654f14203ac8dcd7d864dc722' # CALENDARIO
 DATABASE_ID_MT = '246152ff88c5809f87eefc99c62f5911' # METEGOL
-
-TELEGRAM_TOKEN = '1844138684:AAExApDRm2UkC1bD5lTRGhgH5fl6rKJWw7E' #Bot Zz
-#TELEGRAM_TOKEN = '8366578234:AAH3uUYpndGXlhslfSQdl6Brid_GEkAPTjA' #Bot DMP
 
 CHAT_ID_TEST = '-1001549489769'
 CHAT_ID_EPROC = '-1001304930938'
@@ -75,20 +71,26 @@ CHAT_ID_LOG =  '-1003024191085'
 CHAT_ID_ADMIN = "-1001164975360"
 CHAT_ID_DEBUG = '-1001708770323'
 
+#TELEGRAM_TOKEN = '1844138684:AAExApDRm2UkC1bD5lTRGhgH5fl6rKJWw7E' #Bot Zz
+#TELEGRAM_TOKEN = '8366578234:AAH3uUYpndGXlhslfSQdl6Brid_GEkAPTjA' #Bot DMP
 
-#THREAD_IDS = { 
-#    "Caimanes": 14,   # ID del tópico Caimán en LOG
-#    "Zorros": 4,      # ID del tópico Zorros en LOG
-#    "Huemules": 2,    # ID del tópico Huemules en LOG
-#    "Preliminar Agenda": 16
-#}
-
-THREAD_IDS = { 
-    "Caimanes": 2821,   # ID del tópico Caimán en DEBUG
-    "Zorros": 2825,      # ID del tópico Zorros en DEBUG
-    "Huemules": 2823,    # ID del tópico Huemules en DEBUG
-    "Preliminar Agenda": 16
-}
+QA_TEST = True
+if QA_TEST : 
+    TELEGRAM_TOKEN = '8366578234:AAH3uUYpndGXlhslfSQdl6Brid_GEkAPTjA' #Bot DMP 
+    THREAD_IDS = { 
+        "Caimanes": 14,   # ID del tópico Caimán en LOG
+        "Zorros": 4,      # ID del tópico Zorros en LOG
+        "Huemules": 2,    # ID del tópico Huemules en LOG
+        "Preliminar Agenda": 16
+    }
+else:
+    TELEGRAM_TOKEN = '1844138684:AAExApDRm2UkC1bD5lTRGhgH5fl6rKJWw7E' #Bot Zz
+    THREAD_IDS = { 
+        "Caimanes": 2821,   # ID del tópico Caimán en DEBUG
+        "Zorros": 2825,      # ID del tópico Zorros en DEBUG
+        "Huemules": 2823,    # ID del tópico Huemules en DEBUG
+        "Preliminar Agenda": 16
+    }
 
 CHAT_ID = CHAT_ID_LOG
 
@@ -105,7 +107,7 @@ TASK_FIELDS = [
     "SIDERSA (BD)", "TPR (BD)", "WIENER LAB (BD)"
     ]
 
-EQUIPOS_CONFIG = {
+EQUIPOS_CONFIG= {
     "General": {
         "emoji": "",
         "display_name": "General",
@@ -210,6 +212,78 @@ DONE_STATUS_NAMES = {"done", "hecho", "finalizado", "listo", "completado", "clos
 
 DEBUG = True  # Cambiar a False en producción
 
+CONFIRMAR = 999
+
+# ==========================================
+# HELPERS GENERALES
+# ==========================================
+
+def wrap_handler(func):
+    """Wrapper para mostrar mensaje de ejecución"""
+    async def wrapper(update: Update, context: CallbackContext):
+        if update.message:
+            await update.message.reply_text(
+                "⚡ Ejecutando tarea...",
+                parse_mode=ParseMode.HTML,
+            )
+        return await func(update, context)
+    return wrapper
 
 
+# ==========================================
+# CANCELAR / GENERIC
+# ==========================================
 
+async def cancelar(update: Update, context: CallbackContext):
+    if update.message:
+        await update.message.reply_text("❌ Conversación cancelada.")
+    elif update.callback_query:
+        await update.callback_query.message.reply_text("❌ Conversación cancelada.")
+    return ConversationHandler.END
+
+
+async def generic_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        await update.message.reply_text("⚡ Comando no reconocido. Usa /help")
+
+
+# ==========================================
+# CONFIRMACIÓN GLOBAL
+# ==========================================
+
+async def manejar_confirmacion(update: Update, context: CallbackContext):
+    respuesta = update.message.text.strip().lower()
+
+    if respuesta in ("sí", "si"):
+        if "pendiente" in context.user_data:
+            funcion_real = context.user_data.pop("pendiente")
+            return await funcion_real(update, context)
+        else:
+            await update.message.reply_text("⚠️ No hay ninguna acción pendiente.")
+    else:
+        await update.message.reply_text("❌ Acción cancelada.")
+
+    return ConversationHandler.END
+
+
+def confirmar_handler(comando: str, funcion_real):
+    async def handler(update: Update, context: CallbackContext):
+        context.user_data["pendiente"] = funcion_real
+        await update.message.reply_text(
+            f"⚠️ Vas a ejecutar <b>{comando}</b>.\n¿Confirmás? (sí/no)",
+            parse_mode=ParseMode.HTML,
+        )
+        return CONFIRMAR
+
+    return ConversationHandler(
+        entry_points=[CommandHandler(comando, handler)],
+        states={
+            CONFIRMAR: [
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND,
+                    manejar_confirmacion,
+                )
+            ]
+        },
+        fallbacks=[CommandHandler("cancelar", cancelar)],
+    )

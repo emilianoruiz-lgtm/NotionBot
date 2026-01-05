@@ -6,12 +6,11 @@
 import Config
 import Horarios
 from modules.CurvaParcial import generar_curva_parcial, generar_curva_parcial_equipo
-from modules.Agenda import generar_resumen_manana
-from modules.AgendaHoy import agendahoy
-from modules.AgendaPlAdmin import AgendaPlAdmin
-from modules.AgendaSemProx import AgendaPlAdminSemanaSiguiente
+from modules.Agenda import conv_agenda, job_agenda_preliminar, job_agenda_automatica
+from modules.DayOUT import conv_dayout, job_dayout
+from modules.Resumen import resumen
 from modules.RDs import RDs_comments
-from modules.Burn import burndown, newday, listar_planes
+from modules.Burn import burndown, newday
 from modules.SiemensCheck import parsear_oferta_robusto, exportar_excel, parsear_briket
 from modules.mundopizza.menump import (
     mostrar_menu, setmp_start, elegir_item, elegir_precio, cancelar_setmp, 
@@ -19,13 +18,13 @@ from modules.mundopizza.menump import (
 )
 from modules.sethorario import conv_sethorario, TAREAS_MAP
 from modules.jobs import (
-    job_dayin, job_rd, job_burn, job_agenda_preliminar, job_agenda_automatica,
-    job_agenda_semana_prox, job_dayout, job_newday, job_food, job_pay
+    job_dayin, job_rd, job_burn,
+    job_agenda_semana_prox, job_newday, job_food, job_pay
 )
 
 from modules.handlers import (
-    conv_dayin, conv_dayout, conv_dayout_test,conv_agenda,
-    wrap_handler, confirmar_handler, generic_message, cancelar
+    conv_dayin,
+    wrap_handler, confirmar_handler, generic_message
 )
 
 
@@ -443,42 +442,8 @@ async def rd2(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
             parse_mode=Config.ParseMode.HTML
         )
 
-async def epicas(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
-    print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Épicas")
-    try:
-        # Obtener el mensaje de listar_planes (ya devuelve HTML seguro)
-        msg = await listar_planes()
-        
-        # No escapar todo el HTML, solo usarlo tal cual
-        await safe_send_message(
-            bot=context.bot,
-            chat_id=update.effective_chat.id,
-            text=msg,
-            parse_mode=Config.ParseMode.HTML
-        )
-    except Exception as e:
-        logger.error(f"Error en epicas: {e}\nMensaje original: {msg}")
-        # Enviar mensaje sin formato en caso de error
-        await safe_send_message(
-            bot=context.bot,
-            chat_id=update.effective_chat.id,
-            text=f"⚠️ Error al mostrar épicas: {str(e)}\nMensaje sin formato:\n{msg}",
-            parse_mode=None
-        )
-    return Config.ConversationHandler.END
 
-async def agenda(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
-    print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Agenda mañana")
-    resultado = await generar_resumen_manana()
-    if resultado and resultado.strip():
-        await safe_send_message(context.bot, update.effective_chat.id, resultado, parse_mode=Config.ParseMode.HTML)
-    else:
-        await update.message.reply_text("⚠️ No se encontró información para mostrar.", parse_mode=Config.ParseMode.HTML)
 
-async def agendaPlanAdmin(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
-    print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Agenda PL ADmin")
-    resultado = await AgendaPlAdmin()
-    await safe_send_message(context.bot, update.effective_chat.id, resultado, parse_mode=Config.ParseMode.HTML)
 
 async def agendaSemProxima(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
     print(f"[CMD] {Config.datetime.now(TZ).strftime('%d/%m/%y %H:%M')} -  Agenda semana próxima")
@@ -581,6 +546,7 @@ async def chatid(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYP
 
 async def ping(update, context):
     await update.message.reply_text("🏓 pong")
+
 
 # ==========================================
 # MENÚ SET HORARIOS
@@ -714,19 +680,16 @@ if __name__ == "__main__":
     # Configurar handlers
     app.add_handler(conv_dayin)
     app.add_handler(conv_dayout)
-    app.add_handler(conv_dayout_test)
     app.add_handler(conv_sethorario)
     app.add_handler(conv_setmp)
     app.add_handler(conv_agenda)
+
     
     # Comandos con Wrap general "Ejecutando tarea"
     app.add_handler(Config.CommandHandler("debugjobs", wrap_handler(debug_jobs)))
     app.add_handler(Config.CommandHandler("next", wrap_handler(debug_jobs2)))
     app.add_handler(Config.CommandHandler("clearjobs", wrap_handler(clear_jobs)))
-    app.add_handler(Config.CommandHandler("epic", wrap_handler(epicas)))
     app.add_handler(Config.CommandHandler("hoy", wrap_handler(hoy)))
-    app.add_handler(Config.CommandHandler("agenda", wrap_handler(agenda)))
-    app.add_handler(Config.CommandHandler("agendapladmin", wrap_handler(agendaPlanAdmin)))
     app.add_handler(Config.CommandHandler("agendasemprox", wrap_handler(agendaSemProxima)))
     app.add_handler(Config.CommandHandler("rd", wrap_handler(rd)))
     app.add_handler(Config.CommandHandler("rd2", wrap_handler(rd2)))
@@ -739,6 +702,7 @@ if __name__ == "__main__":
     app.add_handler(Config.CommandHandler("mp", mostrar_menu))
     app.add_handler(Config.CommandHandler("ChatID", chatid))
     app.add_handler(Config.CommandHandler("ping", ping))
+    app.add_handler(Config.CommandHandler("epic", resumen))
 
     # Comandos cortos, con Wrap propio
     app.add_handler(Config.CommandHandler("curvas", curva_parcial))

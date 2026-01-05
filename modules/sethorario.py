@@ -9,9 +9,11 @@ import Horarios
 import Config
 import re
 from modules.jobs import (
-    job_dayin, job_rd, job_burn, job_agenda_preliminar, job_agenda_automatica,
-    job_dayout, job_newday, job_food, job_pay,job_agenda_semana_prox
+    job_dayin, job_rd, job_burn,
+    job_newday, job_food, job_pay,job_agenda_semana_prox
 )
+from modules.Agenda import job_agenda_preliminar, job_agenda_automatica
+from modules.DayOUT import job_dayout
 
 # Configura logging
 logging.basicConfig(

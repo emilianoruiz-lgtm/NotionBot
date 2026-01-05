@@ -1,15 +1,39 @@
 # ==========================================
-# 1. IMPORTS
+# IMPORTS
 # ==========================================
 
 # Módulos Locales
 import Config
 
 
+# ==========================================
+# CONFIGURACIÓN Y CONSTANTES
+# ==========================================
 
-fecha_manana_dt = Config.datetime.now(Config.ARG_TZ) + Config.timedelta(days=1)
-fecha_manana = fecha_manana_dt.strftime('%d-%m-%Y')
+ESPERANDO_FECHA_AGENDA = 300
 
+
+# ==========================================
+# UTILIDADES DE SISTEMA Y TIEMPO
+# ==========================================
+
+def is_weekday(dt):
+    return dt.weekday() < 5  # lunes=0 ... viernes=4
+
+
+def fecha_inicio(registro):
+        date_prop = registro['properties'].get('Date', {}).get('date', {})
+        if date_prop and date_prop.get('start'):
+            try:
+                return Config.dateutil.parser.isoparse(date_prop['start']).replace(tzinfo=None)
+            except:
+                return Config.datetime.max
+        return Config.datetime.max
+
+
+# ==========================================
+# FUNCIONES DE DOMINIO (AGENDA)
+# ==========================================
 
 def get_team_config(equipo):
     cfg = Config.EQUIPOS_CONFIG.get(equipo, {})
@@ -18,9 +42,62 @@ def get_team_config(equipo):
         cfg.get("display_name", equipo),
     )
 
-# --- FUNCIONES NOTION ---
-def get_registros_manana_calendar():
-    """Obtiene los registros que incluyen el día de mañana desde Notion"""
+def get_alias(nombre):
+    return Config.ALIAS_PERSONAS.get(nombre, nombre)
+
+def get_personas(props):
+    personas = props.get('Person', {}).get('people', [])
+    nombres = [p.get('name', '') for p in personas if p.get('name')]
+    return [get_alias(n) for n in nombres]
+
+def get_tipo(props):
+    tipo = "Sin tipo"
+    tipo_prop = props.get('Tipo')
+    if tipo_prop:
+        if tipo_prop.get('select'):
+            tipo = tipo_prop['select'].get('name', 'Sin tipo')
+        elif tipo_prop.get('multi_select'):
+            if tipo_prop['multi_select']:
+                tipo = tipo_prop['multi_select'][0].get('name', 'Sin tipo')
+        elif tipo_prop.get('rollup'):
+            arr = tipo_prop['rollup'].get('array', [])
+            if arr:
+                tipo = arr[0].get('name', 'Sin tipo')
+    return tipo
+
+def titulo_con_guiones(nombre, total=30):
+    base = f"{nombre} "
+    return base + "-" * max(0, total - len(base))
+
+
+def get_hora(props):
+    date_prop = props.get('Date', {}).get('date', {})
+    if not date_prop or not date_prop.get('start'):
+        return None
+
+    try:
+        dt = Config.dateutil.parser.isoparse(date_prop['start'])
+
+        # Normalizar TZ
+        if dt.tzinfo is None:
+            dt = Config.ARG_TZ.localize(dt)
+        else:
+            dt = dt.astimezone(Config.ARG_TZ)
+
+        # Si es medianoche exacta, asumimos "sin horario"
+        if dt.hour == 0 and dt.minute == 0:
+            return None
+
+        return dt.strftime("%H:%M")
+    except:
+        return None
+
+
+# ==========================================
+# FETCH NOTION
+# ==========================================
+
+def get_registros_calendar_por_fecha(fecha_dt):
     registros = []
     has_more = True
     next_cursor = None
@@ -40,144 +117,127 @@ def get_registros_manana_calendar():
         has_more = data.get('has_more', False)
         next_cursor = data.get('next_cursor')
 
-    # Filtrar por fecha de mañana
     registros_filtrados = []
     for r in registros:
         date_prop = r['properties'].get('Date', {}).get('date')
         if not date_prop or not date_prop.get('start'):
             continue
-        start_dt = Config.dateutil.parser.isoparse(date_prop['start']).replace(tzinfo=None)
-        end_dt = Config.dateutil.parser.isoparse(date_prop['end']).replace(tzinfo=None) if date_prop.get('end') else start_dt
-        if start_dt.date() <= fecha_manana_dt.date() <= end_dt.date():
+
+        start_dt = Config.dateutil.parser.isoparse(date_prop['start']).date()
+        end_dt = (
+            Config.dateutil.parser.isoparse(date_prop['end']).date()
+            if date_prop.get('end')
+            else start_dt
+        )
+
+        if start_dt <= fecha_dt <= end_dt:
             registros_filtrados.append(r)
 
-    print(f"Registros de calendario para mañana ({fecha_manana}): {len(registros_filtrados)}")
     return registros_filtrados
 
-# --- FUNCIONES AUXILIARES ---
-def get_alias(nombre):
-    return Config.ALIAS_PERSONAS.get(nombre, nombre)
 
-def get_personas(props):
-    personas = props.get('Person', {}).get('people', [])
-    nombres = [p.get('name', '') for p in personas if p.get('name')]
-    return [get_alias(n) for n in nombres]
+# ==========================================
+# SERVICIO DE DOMINIO
+# ==========================================
 
-
-def get_tipo(props):
-    tipo = "Sin tipo"
-    tipo_prop = props.get('Tipo')
-    if tipo_prop:
-        if tipo_prop.get('select'):
-            tipo = tipo_prop['select'].get('name', 'Sin tipo')
-        elif tipo_prop.get('multi_select'):
-            if tipo_prop['multi_select']:
-                tipo = tipo_prop['multi_select'][0].get('name', 'Sin tipo')
-        elif tipo_prop.get('rollup'):
-            arr = tipo_prop['rollup'].get('array', [])
-            if arr:
-                tipo = arr[0].get('name', 'Sin tipo')
-    return tipo
+def generar_agenda_por_fecha(fecha):
+    registros = get_registros_calendar_por_fecha(fecha)
+    return resumen_calendar(registros, fecha)
 
 
-def format_linea(r):
-    props = r['properties']
+# ==========================================
+# MENÚES TELEGRAM
+# ==========================================
 
-    # --- Tipo base (sirve para clasificar en resumen_calendar) ---
-    tipo = "Sin tipo"
-    tipo_prop = props.get('Tipo')
-    if tipo_prop:
-        if tipo_prop.get('select'):
-            tipo = tipo_prop['select'].get('name', 'Sin tipo')
-        elif tipo_prop.get('multi_select') and len(tipo_prop['multi_select']) > 0:
-            tipo = tipo_prop['multi_select'][0].get('name', 'Sin tipo')
-        elif tipo_prop.get('rollup'):
-            rollup = tipo_prop['rollup']
-            if 'array' in rollup and len(rollup['array']) > 0:
-                tipo = rollup['array'][0].get('name', 'Sin tipo')
+def create_agenda_keyboard():
+    keyboard = [
+        [
+            Config.InlineKeyboardButton("📅 -2 días", callback_data="agenda_antesayer"),
+        ],
+        [
+            Config.InlineKeyboardButton("📅 -1 día", callback_data="agenda_ayer"),
+        ],
+        [
+            Config.InlineKeyboardButton("📅 <Hoy>", callback_data="agenda_hoy"),
+        ],
+        [
+            Config.InlineKeyboardButton("📅 +1 día", callback_data="agenda_manana"),
+        ],
+        [
+            Config.InlineKeyboardButton("📅 +2 días", callback_data="agenda_pasadomanana"),
+        ],
+        [
+            Config.InlineKeyboardButton("Cancelar", callback_data="agenda_cancelar"),
+        ],
+    ]
+    return Config.InlineKeyboardMarkup(keyboard)
 
-    # --- Título visible ---
-    titulo = tipo
+async def start_agenda(update: Config.Update, context: Config.CallbackContext):
+    await update.message.reply_text(
+        "📋 ¿Qué agenda querés consultar?",
+        reply_markup=create_agenda_keyboard(),
+    )
+    return ESPERANDO_FECHA_AGENDA
 
-    # Nombre de personas
-    personas = props.get('Person', {}).get('people', [])
-    nombres_personas = ", ".join([p.get('name', '') for p in personas if p.get('name')])
 
-    # Caso AUSENTE → "Persona – Tipo"
-    if tipo in Config.TIPOS_SIN_ARRANQUE_NORMAL:
-        if nombres_personas:
-            titulo = f"{nombres_personas} – {tipo}"
-        else:
-            titulo = tipo
+# ==========================================
+# CONVERSATION HANDLERS
+# ==========================================
 
-    # --- Cliente ---
-    cliente_texto = ""
-    if tipo not in Config.TIPOS_SIN_CLIENTE:
-        cliente_prop = props.get('Cliente', {})
-        if cliente_prop.get('type') == 'rollup':
-            rollup = cliente_prop.get('rollup', {})
-            if 'array' in rollup:
-                nombres = []
-                for item in rollup['array']:
-                    if 'name' in item:
-                        nombres.append(item['name'])
-                    elif item.get('type') == 'select':
-                        nombres.append(item['select']['name'])
-                if nombres:
-                    cliente_texto = ', '.join(nombres)
-            elif 'string' in rollup:
-                cliente_texto = rollup['string']
-        elif cliente_prop.get('type') == 'select':
-            cliente_texto = cliente_prop.get('select', {}).get('name', '')
-        elif cliente_prop.get('type') == 'multi_select':
-            nombres = [sel['name'] for sel in cliente_prop.get('multi_select', [])]
-            if nombres:
-                cliente_texto = ', '.join(nombres)
+# CONVERSACIÓN SELECCIÓN DE AGENDA
+async def recibir_fecha_agenda(update: Config.Update, context: Config.CallbackContext):
+    query = update.callback_query
+    await query.answer()
 
-    # --- Hora desde Date ---
-    date_prop = props.get('Date', {}).get('date', {})
-    hora_texto = ""
-    if date_prop and date_prop.get('start'):
-        try:
-            dt_start = Config.dateutil.parser.isoparse(date_prop['start']).replace(tzinfo=None)
-            if not (dt_start.hour == 0 and dt_start.minute == 0):
-                hora_texto = dt_start.strftime("%H:%M")
-        except Exception:
-            hora_texto = ""
+    data = query.data
 
-    # --- Personas ---
-    personas = props.get('Person', {}).get('people', [])
-    persona_texto = "\n".join([f"      - {p.get('name', '')}" for p in personas]) if personas else "      - Sin persona"
+    if data == "agenda_cancelar":
+        await query.message.reply_text("❌ Operación cancelada.")
+        return Config.ConversationHandler.END
 
-    # --- Confirmado ---
-    confirmado = props.get('Confirmado', {}).get('checkbox', False)
-    confirmado_texto = "▪️" if confirmado else "[?]\n"
+    hoy = Config.date.today()
 
-    # --- Línea principal ---
-    linea_principal = f"{confirmado_texto} {titulo}"
-    if cliente_texto:
-        linea_principal += f"\n        {cliente_texto}"
-    if hora_texto:
-        linea_principal += f" ({hora_texto})"
+    if data == "agenda_antesayer":
+        fecha = hoy - Config.timedelta(days=2)
+    elif data == "agenda_ayer":
+        fecha = hoy - Config.timedelta(days=1)
+    elif data == "agenda_hoy":
+        fecha = hoy
+    elif data == "agenda_manana":
+        fecha = hoy + Config.timedelta(days=1)
+    elif data == "agenda_pasadomanana":
+        fecha = hoy + Config.timedelta(days=2)
+        titulo = "PASADO MAÑANA"
+    else:
+        await query.message.reply_text("⚠️ Opción inválida.")
+        return Config.ConversationHandler.END
 
-    # --- Línea final ---
-    linea = f"<b>{linea_principal}</b>\n{persona_texto}"
-    return linea
+    await query.message.reply_text("🕐 Revisando calendario...")
+    resultado = await Config.asyncio.to_thread(generar_agenda_por_fecha, fecha)
+    await query.message.reply_text(
+        resultado,
+        parse_mode=Config.ParseMode.HTML,
+    )
 
-def fecha_inicio(r):
-        date_prop = r['properties'].get('Date', {}).get('date', {})
-        if date_prop and date_prop.get('start'):
-            try:
-                return Config.dateutil.parser.isoparse(date_prop['start']).replace(tzinfo=None)
-            except:
-                return Config.datetime.max
-        return Config.datetime.max
+    return Config.ConversationHandler.END
 
-def titulo_con_guiones(nombre, total=30):
-    base = f"{nombre} "
-    return base + "-" * max(0, total - len(base))
+conv_agenda = Config.ConversationHandler(
+    entry_points=[Config.CommandHandler("agenda", start_agenda)],
+    states={
+        ESPERANDO_FECHA_AGENDA: [
+            Config.CallbackQueryHandler(
+                recibir_fecha_agenda, pattern="^agenda_"
+            )
+        ]
+    },
+    fallbacks=[Config.CommandHandler("cancelar", Config.cancelar)],
+)
 
-# --- RESUMEN PRINCIPAL ---
+
+# ==========================================
+# LÓGICA DE ARMADO DE AGENDA
+# ==========================================
+
 def resumen_calendar(registros, fecha):
     fecha_str = fecha.strftime("%d-%m-%Y")
     resumen_lines = [f"📅 <b>AGENDA {fecha_str}</b>"]
@@ -186,20 +246,8 @@ def resumen_calendar(registros, fecha):
 
     for r in registros:
         props = r['properties']
-        # --- Extraer tipo ---
-        tipo = "Sin tipo"
-        tipo_prop = props.get('Tipo')
-        if tipo_prop:
-            if tipo_prop.get('select'):
-                tipo = tipo_prop['select'].get('name', 'Sin tipo')
-            elif tipo_prop.get('multi_select') and len(tipo_prop['multi_select']) > 0:
-                tipo = tipo_prop['multi_select'][0].get('name', 'Sin tipo')
-            elif tipo_prop.get('rollup'):
-                rollup = tipo_prop['rollup']
-                if 'array' in rollup and len(rollup['array']) > 0:
-                    tipo = rollup['array'][0].get('name', 'Sin tipo')
+        tipo = get_tipo(props)
         tipo_lower = tipo.lower()
-
 
         if tipo in Config.TIPOS_SIN_ARRANQUE_NORMAL:
             equipos_dict.setdefault("Ausente", []).append(r)
@@ -266,58 +314,59 @@ def resumen_calendar(registros, fecha):
                 props = r['properties']
                 tipo = get_tipo(props)
                 personas = get_personas(props)
+                hora = get_hora(props)
 
                 for p in personas or ["Sin persona"]:
-                    resumen_lines.append(f"      {p} – {tipo}")
+                    if hora:
+                        resumen_lines.append(f"      {p} | {tipo} {hora}")
+                    else:
+                        resumen_lines.append(f"      {p} | {tipo}")
         else:
             resumen_lines.append(Config.NO_REGISTROS_TEXT)
 
     return "\n".join(resumen_lines)
 
-async def generar_resumen_manana():
-    registros_manana = get_registros_manana_calendar()
-    resumen = resumen_calendar(registros_manana)
-    return resumen
 
-def get_registros_calendar_por_fecha(fecha_dt):
-    registros = []
-    has_more = True
-    next_cursor = None
+# ============================
+# JOB AGENDA PRELIMINAR
+# ============================
+async def job_agenda_preliminar(context: Config.CallbackContext):
+    ahora = Config.datetime.now(Config.ARG_TZ)
+    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
+        print(f"⚠ Prelim. agenda mañana no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
+        return
 
-    while has_more:
-        query = {"page_size": 100}
-        if next_cursor:
-            query["start_cursor"] = next_cursor
-
-        response = Config.requests.post(
-            f"https://api.notion.com/v1/databases/{Config.DATABASE_ID_CALENDAR}/query",
-            headers=Config.HEADERS,
-            json=query
+    try:
+        print(f"📤 job_agenda_preliminar disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
+        fecha = ahora.date() + Config.timedelta(days=1)
+        resultado = await Config.asyncio.to_thread(generar_agenda_por_fecha, fecha)
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_LOG,
+            text=f"[Agenda Preliminar]\n{resultado}",
+            parse_mode="HTML"
         )
-        data = response.json()
-        registros.extend(data.get('results', []))
-        has_more = data.get('has_more', False)
-        next_cursor = data.get('next_cursor')
+        print("📤 Mensaje de Agenda Preliminar enviado")
+    except Exception as e:
+        print(f"❌ Error en job_agenda_preliminar: {e}")
 
-    registros_filtrados = []
-    for r in registros:
-        date_prop = r['properties'].get('Date', {}).get('date')
-        if not date_prop or not date_prop.get('start'):
-            continue
+# ============================
+# JOB AGENDA AUTOMÁTICA
+# ============================
+async def job_agenda_automatica(context: Config.CallbackContext):
+    ahora = Config.datetime.now(Config.ARG_TZ)
+    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
+        print(f"⚠️[DEBUG] Agenda automática no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
+        return
 
-        start_dt = Config.dateutil.parser.isoparse(date_prop['start']).date()
-        end_dt = (
-            Config.dateutil.parser.isoparse(date_prop['end']).date()
-            if date_prop.get('end')
-            else start_dt
+    try:
+        print(f"📤 job_agenda_automatica disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
+        fecha = ahora.date() + Config.timedelta(days=1)
+        resultado = await Config.asyncio.to_thread(generar_agenda_por_fecha, fecha)
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_EPROC,
+            text=f"{resultado}",
+            parse_mode="HTML"
         )
-
-        if start_dt <= fecha_dt <= end_dt:
-            registros_filtrados.append(r)
-
-    return registros_filtrados
-
-async def AgendaMenu(fecha):
-    registros = get_registros_calendar_por_fecha(fecha)
-    resumen = resumen_calendar(registros, fecha)
-    return resumen
+        print("📤 Mensaje de Agenda automática enviado")
+    except Exception as e:
+        print(f"❌ Error en job_agenda_automatica: {e}")

@@ -5,13 +5,9 @@
 # Módulos Locales
 import Config
 from modules.DayIN import DayIN
-from modules.DayOUT import DayOUT, DayOutEquipo
 from modules.Burn import burndown, newday
 from modules.RDs import RDs_comments
-from modules.Agenda import generar_resumen_manana
 from modules.mundopizza.menump import get_menu_text
-from modules.AgendaSemProx import AgendaPlAdminSemanaSiguiente
-
 
 ahora = Config.datetime.now(Config.ARG_TZ)
 
@@ -39,21 +35,7 @@ async def job_dayin(context: Config.CallbackContext):
         print(f"❌ Error en job_dayin: {e}")
 
 
-# ============================
-# JOB DAYOUT
-# ============================
-async def job_dayout(context: Config.CallbackContext):
-    print("📤 job_dayout disparado a las", Config.datetime.now(Config.ARG_TZ))
-    try:
-        resultado = await DayOUT()
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_LOG,
-            text=f"[DayOUT automático]\n{resultado}",
-            parse_mode="HTML"
-        )
-        print("📤 DayOUT automático enviado")
-    except Exception as e:
-        print(f"❌ Error en job_dayout: {e}")
+
 
 # ============================
 # JOB BURN
@@ -95,45 +77,7 @@ async def job_rd(context: Config.CallbackContext):
             parse_mode="HTML"
         )
 
-# ============================
-# JOB AGENDA PRELIMINAR
-# ============================
-async def job_agenda_preliminar(context: Config.CallbackContext):
-    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
-        print(f"⚠ Prelim. agenda mañana no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
-        return
 
-    try:
-        print(f"📤 job_agenda_preliminar disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
-        resultado = await generar_resumen_manana()
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_LOG,
-            text=f"[Agenda Preliminar]\n{resultado}",
-            parse_mode="HTML"
-        )
-        print("📤 Mensaje de Agenda Preliminar enviado")
-    except Exception as e:
-        print(f"❌ Error en job_agenda_preliminar: {e}")
-
-# ============================
-# JOB AGENDA AUTOMÁTICA
-# ============================
-async def job_agenda_automatica(context: Config.CallbackContext):
-    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
-        print(f"⚠️[DEBUG] Agenda automática no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
-        return
-
-    try:
-        print(f"📤 job_agenda_automatica disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
-        resultado = await generar_resumen_manana()
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_EPROC,
-            text=f"{resultado}",
-            parse_mode="HTML"
-        )
-        print("📤 Mensaje de Agenda automática enviado")
-    except Exception as e:
-        print(f"❌ Error en job_agenda_automatica: {e}")
 
 # ============================
 # JOB AGENDA SEM PROX
