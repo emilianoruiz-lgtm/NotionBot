@@ -1,13 +1,34 @@
 # ==========================================
-# 1. IMPORTS
+# IMPORTS
 # ==========================================
 
 # Módulos Locales
 import Config
 
 
+# ==========================================
+# CONFIGURACIÓN Y CONSTANTES
+# ==========================================
 
-# --- FUNCIONES AUXILIARES ---
+
+
+# ==========================================
+# UTILIDADES DE SISTEMA Y TIEMPO
+# ==========================================
+
+
+
+
+# ==========================================
+# HELPERS DEL DOMINIO
+# ==========================================
+
+def get_reply_target(update):
+    if update.message:
+        return update.message
+    if update.callback_query:
+        return update.callback_query.message
+    return None
 
 def _task_is_done(task_props):
     """Determina si la tarea está completada."""
@@ -42,9 +63,42 @@ def find_property(properties, name):
             return k
     return None
 
+def _normalize_text(s):
+    """Quita diacríticos y pasa a minúsculas para comparar strings de estado."""
+    if not s:
+        return ""
+    s = s.strip().lower()
+    s = Config.unicodedata.normalize("NFD", s)
+    return "".join(ch for ch in s if Config.unicodedata.category(ch) != "Mn")
 
-# --- NOTION ---
+async def enviar_a_telegram(mensaje_html, equipo: str):
+    print(f"Enviando comentario a Telegram para {equipo}...")
+    bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
+    try:
+        thread_id = Config.THREAD_IDS.get(equipo)
+        if not thread_id:
+            print(f"⚠️ No se encontró thread_id para {equipo}, se enviará al chat principal.")
+            await bot.send_message(chat_id=Config.CHAT_ID_DEBUG, text=mensaje_html, parse_mode=Config.ParseMode.HTML)
+        else:
+            await bot.send_message(
+                chat_id=Config.CHAT_ID,
+                text=mensaje_html,
+                parse_mode=Config.ParseMode.HTML,
+                message_thread_id=thread_id
+            )
+    except Exception as e:
+        print("Error enviando mensaje a Telegram:", e)
 
+def contar_integrantes_equipo(equipo: str) -> int:
+    if equipo == "General":
+        return 0
+
+    equipo_cfg = Config.EQUIPOS_CONFIG.get(equipo, {})
+    return len(equipo_cfg.get("integrantes", []))
+
+# ==========================================
+# FETCH NOTION
+# ==========================================
 def get_registros_hoy(database_id=Config.DATABASE_ID):
     """Obtiene registros RD del día actual."""
     fecha_hoy = Config.datetime.now().strftime('%Y-%m-%d')
@@ -54,32 +108,46 @@ def get_registros_hoy(database_id=Config.DATABASE_ID):
     data = r.json()
     return data.get('results', [])
 
-# --- TELEGRAM ---
+def copiar_bloques_recursivo_completo(orig_id, target_id):
+    r = Config.requests.get(f"https://api.notion.com/v1/blocks/{orig_id}/children", headers=Config.HEADERS)
+    bloques = r.json().get('results', [])
+    for bloque in bloques:
+        bloque_nuevo = {"type": bloque['type']}
+        tipo = bloque['type']
 
-async def enviar_a_telegram(mensaje_html, equipo=None):
-    bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
-    try:
-        thread_id = Config.THREAD_IDS.get(equipo)
-        kwargs = {"chat_id": Config.CHAT_ID, "text": mensaje_html, "parse_mode": Config.ParseMode.HTML}
-        if thread_id: kwargs["message_thread_id"] = thread_id
-        await bot.send_message(**kwargs)
-    except Exception as e:
-        print("Error enviando mensaje a Telegram:", e)
+        if tipo in ['paragraph','heading_1','heading_2','heading_3',
+                     'bulleted_list_item','numbered_list_item','to_do','quote','callout','code','toggle']:
+            if bloque[tipo].get('text') is not None:
+                bloque_nuevo[tipo] = bloque[tipo]
+            else:
+                continue
+        elif tipo in ['image','file','video','pdf','audio','embed','bookmark']:
+            contenido = bloque.get(tipo)
+            if contenido:
+                bloque_nuevo[tipo] = contenido
+            else:
+                continue
+        elif tipo in ['divider','breadcrumb','table_of_contents','synced_block','template']:
+            bloque_nuevo[tipo] = {}
+        elif tipo in ['table','column_list','column','table_row']:
+            bloque_nuevo[tipo] = bloque.get(tipo, {})
+        else:
+            continue
+
+        post = Config.requests.patch(f"https://api.notion.com/v1/blocks/{target_id}/children",
+                              headers=Config.HEADERS, json={"children":[bloque_nuevo]})
+        if post.status_code != 200:
+            print("Error copiando bloque:", post.text)
+            continue
+
+        if bloque.get('has_children', False):
+            nuevo_bloque_id = post.json()['results'][0]['id']
+            copiar_bloques_recursivo_completo(bloque['id'], nuevo_bloque_id)
 
 
-
-
-
-def _normalize_text(s):
-    """Quita diacríticos y pasa a minúsculas para comparar strings de estado."""
-    if not s:
-        return ""
-    s = s.strip().lower()
-    s = Config.unicodedata.normalize("NFD", s)
-    return "".join(ch for ch in s if Config.unicodedata.category(ch) != "Mn")
-
-
-# --- ACTUALIZAR FIBACT --- 
+# ==========================================
+# WRITE NOTION
+# ==========================================
 def actualizar_fibact(plan_id):
     r = Config.requests.get(f"https://api.notion.com/v1/pages/{plan_id}", headers=Config.HEADERS)
     if r.status_code != 200:
@@ -165,7 +233,6 @@ def actualizar_fibact(plan_id):
     # Devuelvo también el estado del plan (puede ser None)
     return total_fib, fibact_anterior, plan_title, plan_estado
 
-# --- ACTUALIZAR PARCIAL CORRECTAMENTE EN RD --- 
 def actualizar_parcial(rd_registro):
     props_rd = rd_registro.get("properties", {})
     mn_key = find_property(props_rd, "TEAM MEETING NOTES")
@@ -209,7 +276,7 @@ def actualizar_parcial(rd_registro):
             if "epica cerrada" in estado_norm:
                 plan_title_fmt = f"<s>✅ {plan_title_esc}</s>"
             elif "cancelada" in estado_norm or "replanific" in estado_norm:
-                plan_title_fmt = f"<s>❎ {plan_title_esc}</s>"
+                plan_title_fmt = f"<s>❌ {plan_title_esc}</s>"
             elif "épica en riesgo" in estado_norm:
                 plan_title_fmt = f"⚠️ {plan_title_esc}"
             else:
@@ -240,24 +307,13 @@ def actualizar_parcial(rd_registro):
     return resumen, total_parcial
 
 def actualizar_cant_integrantes(rd_registro, equipo):
-    """
-    Actualiza en Notion la cantidad de integrantes según el equipo.
-    """
     props_rd = rd_registro.get("properties", {})
     cant_key = find_property(props_rd, "Cant. Integrantes")
     if not cant_key:
         print(f"⚠️ RD {rd_registro['id']} no tiene propiedad 'Cant. Integrantes'")
         return
 
-    # Contar integrantes según equipo
-    if equipo == "Caimanes":
-        cantidad = len(Config.PERSONAS_CAIMANES)
-    elif equipo == "Zorros":
-        cantidad = len(Config.PERSONAS_ZORROS)
-    elif equipo == "Huemules":
-        cantidad = len(Config.PERSONAS_HUEMULES)
-    else:
-        cantidad = 0
+    cantidad = contar_integrantes_equipo(equipo)
 
     # Valor anterior
     cant_anterior = props_rd.get(cant_key, {}).get("number")
@@ -267,74 +323,6 @@ def actualizar_cant_integrantes(rd_registro, equipo):
     r_patch = Config.requests.patch(f"https://api.notion.com/v1/pages/{rd_registro['id']}",
                              headers=Config.HEADERS, json=payload)
     print(f"[DEBUG] RD {rd_registro['id']} → Cant. Integrantes {cant_anterior} → {cantidad}, resp={r_patch.status_code}")
-
-async def burndown():
-    registros = get_registros_hoy()  # estos son RD
-    equipos_procesados = set()
-
-    for rd in registros:
-        resumen, total_parcial = actualizar_parcial(rd)  # recalcula Fibact de MN → PLAN y actualiza PARCIAL en RD
-        
-        # obtener valor anterior de PARCIAL
-        parcial_key = find_property(rd.get("properties", {}), "PARCIAL")
-        parcial_anterior = rd.get("properties", {}).get(parcial_key, {}).get("number") if parcial_key else None
-
-        equipo = rd.get("properties", {}).get("Equipo", {}).get("select", {}).get("name")
-
-        # 🔹 Actualizar la cantidad de integrantes del equipo en el RD
-        if equipo:
-            actualizar_cant_integrantes(rd, equipo)
-
-        # Chequear si hay cambios en total_parcial respecto al valor anterior
-        if parcial_anterior is not None and parcial_anterior == total_parcial:
-            print(f"ℹ️ No hay cambios en PARCIAL para RD {rd['id']}. No se envía mensaje.")
-            continue  # saltar envío a telegram
-
-        equipo = rd.get("properties", {}).get("Equipo", {}).get("select", {}).get("name")
-        mensaje = f"📊 Burndown actualizado para {equipo or 'Sin equipo'}\n{resumen}"
-        await enviar_a_telegram(mensaje, equipo)
-
-        if equipo:
-            equipos_procesados.add(equipo)
-
-    print("✅ Burndown finalizado")
-    return equipos_procesados
-
-def copiar_bloques_recursivo_completo(orig_id, target_id):
-    r = Config.requests.get(f"https://api.notion.com/v1/blocks/{orig_id}/children", headers=Config.HEADERS)
-    bloques = r.json().get('results', [])
-    for bloque in bloques:
-        bloque_nuevo = {"type": bloque['type']}
-        tipo = bloque['type']
-
-        if tipo in ['paragraph','heading_1','heading_2','heading_3',
-                     'bulleted_list_item','numbered_list_item','to_do','quote','callout','code','toggle']:
-            if bloque[tipo].get('text') is not None:
-                bloque_nuevo[tipo] = bloque[tipo]
-            else:
-                continue
-        elif tipo in ['image','file','video','pdf','audio','embed','bookmark']:
-            contenido = bloque.get(tipo)
-            if contenido:
-                bloque_nuevo[tipo] = contenido
-            else:
-                continue
-        elif tipo in ['divider','breadcrumb','table_of_contents','synced_block','template']:
-            bloque_nuevo[tipo] = {}
-        elif tipo in ['table','column_list','column','table_row']:
-            bloque_nuevo[tipo] = bloque.get(tipo, {})
-        else:
-            continue
-
-        post = Config.requests.patch(f"https://api.notion.com/v1/blocks/{target_id}/children",
-                              headers=Config.HEADERS, json={"children":[bloque_nuevo]})
-        if post.status_code != 200:
-            print("Error copiando bloque:", post.text)
-            continue
-
-        if bloque.get('has_children', False):
-            nuevo_bloque_id = post.json()['results'][0]['id']
-            copiar_bloques_recursivo_completo(bloque['id'], nuevo_bloque_id)
 
 def agregar_comentario_notion(page_id, texto):
     payload = {
@@ -400,24 +388,6 @@ def duplicar_registro_completo(registro):
     print("Registro duplicado con todo el contenido:", nueva_page_id)
     return nueva_pagina, equipo_select
 
-async def enviar_a_telegram(mensaje_html, equipo: str):
-    print(f"Enviando comentario a Telegram para {equipo}...")
-    bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
-    try:
-        thread_id = Config.THREAD_IDS.get(equipo)
-        if not thread_id:
-            print(f"⚠️ No se encontró thread_id para {equipo}, se enviará al chat principal.")
-            await bot.send_message(chat_id=Config.CHAT_ID_DEBUG, text=mensaje_html, parse_mode=Config.ParseMode.HTML)
-        else:
-            await bot.send_message(
-                chat_id=Config.CHAT_ID,
-                text=mensaje_html,
-                parse_mode=Config.ParseMode.HTML,
-                message_thread_id=thread_id
-            )
-    except Exception as e:
-        print("Error enviando mensaje a Telegram:", e)
-
 def actualizar_type_spc(registro):
     propiedades = {"Type": {"multi_select": [{"name": "SPC"}]}}
     page_id = registro['id']
@@ -426,37 +396,92 @@ def actualizar_type_spc(registro):
     print(f"Registro {page_id} actualizado a solo 'SPC':", response.status_code)
     return response.json()
 
-# --- SCRIPT PRINCIPAL ---
-async def newday():
-    registros = get_registros_hoy()
+# ==========================================
+# SERVICIO DE DOMINIO
+# ==========================================
 
+
+
+
+# ==========================================
+# MENÚES TELEGRAM
+# ==========================================
+
+
+
+# ==========================================
+# CONVERSATION HANDLERS
+# ==========================================
+async def burn(update, context):
+    target = get_reply_target(update)
+
+    if target:
+        await target.reply_text("⚡ Ejecutando Burndown...")
+
+    await burndown()
+
+    if target:
+        await target.reply_text("✔️ Procesado.")
+
+
+
+
+# ==========================================
+# LÓGICA DE BURNDOWN
+# ==========================================
+
+async def burndown():
+    registros = get_registros_hoy()  # estos son RD
     equipos_procesados = set()
 
-    for registro in registros:
-        print(f"Borrando SPC en registro")
-        actualizar_type_spc(registro)
-        print(f"Duplicando registro, actualizando fecha/SPC ")
-        nueva_pagina, equipo = duplicar_registro_completo(registro)
+    for rd in registros:
+        resumen, total_parcial = actualizar_parcial(rd)  # recalcula Fibact de MN → PLAN y actualiza PARCIAL en RD
         
+        # obtener valor anterior de PARCIAL
+        parcial_key = find_property(rd.get("properties", {}), "PARCIAL")
+        parcial_anterior = rd.get("properties", {}).get(parcial_key, {}).get("number") if parcial_key else None
+
+        equipo = rd.get("properties", {}).get("Equipo", {}).get("select", {}).get("name")
+
+        # 🔹 Actualizar la cantidad de integrantes del equipo en el RD
+        if equipo:
+            actualizar_cant_integrantes(rd, equipo)
+
+        # Chequear si hay cambios en total_parcial respecto al valor anterior
+        if parcial_anterior is not None and parcial_anterior == total_parcial:
+            print(f"ℹ️ No hay cambios en PARCIAL para RD {rd['id']}. No se envía mensaje.")
+            continue  # saltar envío a telegram
+
+        equipo = rd.get("properties", {}).get("Equipo", {}).get("select", {}).get("name")
+        mensaje = f"📊 Burndown actualizado para {equipo or 'Sin equipo'}\n{resumen}"
+        await enviar_a_telegram(mensaje, equipo)
+
         if equipo:
             equipos_procesados.add(equipo)
-        print("Registro duplicado correctamente")
-        equipos_texto = equipo if equipo else "Sin equipo"
 
-        # Obtener fecha del registro duplicado
-        fecha_rd = None
-        date_prop = nueva_pagina.get('properties', {}).get('Date', {}).get('date')
-        if date_prop and 'start' in date_prop:
-            fecha_rd = date_prop['start']
-
-        comentario = f"\n<b>Registro RD creado para {equipos_texto}"
-        if fecha_rd:
-            comentario += f" (fecha: {fecha_rd})"
-        comentario += "</b>"
-
-        await enviar_a_telegram(comentario, equipo)
+    print("✅ Burndown finalizado")
+    return equipos_procesados
 
 
+# ============================
+# JOB BURN
+# ============================
+async def job_burn(context: Config.CallbackContext):
+    print("🔥 Ejecutando job_burn", Config.datetime.now(Config.ARG_TZ))
+    equipos_procesados = await burndown()
+    equipos_txt = ", ".join(sorted(equipos_procesados))
+    resultado = f"ℹ️ Los equipos {equipos_txt} entregaron nuevas tareas"
+    if resultado:
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_LOG,
+            text=str(resultado),
+            parse_mode="HTML"
+        )
 
-        # --- NUEVA FUNCIÓN LISTADO DE PLANES ---
+
+
+
+
+
+
 

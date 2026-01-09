@@ -13,6 +13,8 @@ from modules.CurvaParcial import generar_curva_parcial_equipo
 ESPERANDO_EQUIPO_DAYOUT = 200
 MODE_PROD = "prod"
 MODE_TEST = "test"
+SEP_HTML  = "━━━━━━━━━━━━━━━━━━━━"
+SEP_TEXT = "----------------------------------------"
 
 # ==========================================
 # UTILIDADES DE SISTEMA Y TIEMPO
@@ -22,9 +24,8 @@ MODE_TEST = "test"
 
 
 # ==========================================
-# FUNCIONES DE DOMINIO (DAYOUT)
+# HELPERS 
 # ==========================================
-
 
 async def upload_image_temporal(buf, bot, chat_id):
     sent_photo = await bot.send_photo(chat_id=chat_id, photo=Config.InputFile(buf, filename="curva.png"))
@@ -84,11 +85,71 @@ async def dayout_procesar(session, equipos: list[str]) -> list[str]:
             resultados.append(err)
     return resultados
 
+def format_plan_telegram(nombre, estado, porcentaje, fibs, fibs_target, link):
+    nombre_fmt = format_plan_title_html(nombre, estado)
+
+    return (
+        f"\n%{porcentaje} | {fibs}/{fibs_target} Fibs\n"
+        f"<a href='{link}'>{nombre_fmt}</a>\n"
+    )
+
+def format_plan_notion(nombre, estado, porcentaje, fibs, fibs_target):
+    estado_norm = _normalize_text(estado)
+
+    if "epica cerrada" in estado_norm:
+        prefix = "✅ "
+    elif "cancelada" in estado_norm or "replanific" in estado_norm:
+        prefix = "❌ "
+    elif "epica en riesgo" in estado_norm:
+        prefix = "⚠️ "
+    else:
+        prefix = "⚙️ "
+
+    return f"\n{prefix}%{porcentaje} | {fibs}/{fibs_target} Fibs\n{nombre}\n"
+
+def format_tarea_telegram(t):
+    fib_label = "FIB" if t["fibs"] == 1 else "FIBS"
+    return f"• {t['fibs']} {fib_label} <a href='{t['link']}'>{telegram_escape(t['texto'])}</a>\n"
+
+def format_tarea_notion(t):
+    fib_label = "FIB" if t["fibs"] == 1 else "FIBS"
+    return f"• {t['fibs']} {fib_label} {t['texto']}\n"
+
 async def cmd_dayout(update, context):
     return await start_dayout(update, context, mode=MODE_PROD)
 
 async def cmd_dayout_test(update, context):
     return await start_dayout(update, context, mode=MODE_TEST)
+
+def _normalize_text(text: str) -> str:
+    return (
+        text.lower()
+        .replace("á", "a")
+        .replace("é", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ú", "u")
+    )
+
+def format_plan_title_html(nombre, estado_plan):
+    estado_norm = _normalize_text(estado_plan)
+    nombre_esc = Config.html.escape(nombre)
+
+    if "epica cerrada" in estado_norm:
+        return f"<s>✅ {nombre_esc}</s>"
+    elif "cancelada" in estado_norm or "replanific" in estado_norm:
+        return f"<s>❌ {nombre_esc}</s>"
+    elif "épica en riesgo" in estado_norm:
+        return f"⚠️ {nombre_esc}"
+    else:
+        return f"⚙️ {nombre_esc}"
+    
+async def get_page_estado_plan(session, page_id):
+    data = await fetch_json(session, f"https://api.notion.com/v1/pages/{page_id}")
+    prop = data.get("properties", {}).get("Estado")
+    if prop and prop.get("type") in ("select", "status"):
+        return prop.get(prop["type"], {}).get("name", "")
+    return ""
 
 # ==========================================
 # FETCH NOTION
@@ -111,7 +172,7 @@ async def fetch_json(session, url, method="GET", payload=None, desc=""):
         return {}
 
 async def get_registros_hoy(session):
-    fecha_hoy = Config.datetime.now().strftime('%Y-%m-%d')
+    fecha_hoy = Config.datetime.now(Config.ARG_TZ).strftime('%Y-%m-%d')
     query = {"filter": {"property": "Date", "date": {"equals": fecha_hoy}}}
     data = await fetch_json(session, f"https://api.notion.com/v1/databases/{Config.DATABASE_ID}/query",
                             method="POST", payload=query, desc=f"Query BURN ({fecha_hoy})")
@@ -150,7 +211,6 @@ async def get_page_fibact(session, page_id):
         return int(prop.get("number") or 0)
     return 0
 
-
 async def get_page_fibs_target(session, page_id):
     data = await fetch_json(session, f"https://api.notion.com/v1/pages/{page_id}")
     prop = data.get("properties", {}).get("FIBS")
@@ -159,7 +219,6 @@ async def get_page_fibs_target(session, page_id):
         if isinstance(val, (int, float)):
             return int(val)
     return 0
-
 
 async def get_page_equipo(session, page_id):
     data = await fetch_json(session, f"https://api.notion.com/v1/pages/{page_id}")
@@ -210,8 +269,8 @@ async def get_tasks_from_plan(session, plan):
     async def fetch_task(task_id):
         data = await fetch_json(session, f"https://api.notion.com/v1/pages/{task_id}")
         task_title = await get_page_title(session, task_id)
-        if len(task_title) > 40:
-            task_title = task_title[:40] + "…"
+        if len(task_title) > 100:
+            task_title = task_title[:100] + "…"
         task_title_escaped = telegram_escape(task_title)
         page_link = notion_page_url(task_id)
         task_title_link = f'<a href="{page_link}">{task_title_escaped}</a>'
@@ -238,7 +297,7 @@ async def get_tasks_from_plan(session, plan):
         if date_done_prop and date_done_prop.get("type") == "date":
             date_info = date_done_prop.get("date")
             if date_info and date_info.get("start"):
-                if date_info["start"][:10] == Config.datetime.now().strftime('%Y-%m-%d'):
+                if date_info["start"][:10] == Config.datetime.now(Config.ARG_TZ).strftime('%Y-%m-%d'):
                     done_today = True
 
         responsable = ""
@@ -361,25 +420,43 @@ async def dayout():
 # MENÚES TELEGRAM
 # ==========================================
 
-def create_team_keyboard(include_todos=False):
-    keyboard = [
-        [
-            Config.InlineKeyboardButton("Caimanes", callback_data="team_Caimanes"),
-            Config.InlineKeyboardButton("Zorros", callback_data="team_Zorros"),
-            Config.InlineKeyboardButton("Huemules", callback_data="team_Huemules"),
-        ]
-    ]
+def create_team_keyboard(include_todos=False, botones_por_fila=3):
+    keyboard = []
+    fila_actual = []
+
+    for team_key, team_data in Config.EQUIPOS_CONFIG.items():
+        if team_key == "General":
+            continue  # Omitir "General"
+        if team_key == "Admin":
+            continue  # Omitir "Admin"
+        texto = f"{team_data.get('emoji', '')} {team_data.get('display_name', team_key)}".strip()
+
+        fila_actual.append(
+            Config.InlineKeyboardButton(
+                texto,
+                callback_data=f"team_{team_key}"
+            )
+        )
+
+        if len(fila_actual) == botones_por_fila:
+            keyboard.append(fila_actual)
+            fila_actual = []
+
+    # Agregar última fila si quedó incompleta
+    if fila_actual:
+        keyboard.append(fila_actual)
 
     if include_todos:
         keyboard.append([
-            Config.InlineKeyboardButton("Todos", callback_data="team_Todos"),
+            Config.InlineKeyboardButton("Todos", callback_data="team_Todos")
         ])
 
     keyboard.append([
-        Config.InlineKeyboardButton("Cancelar", callback_data="team_Cancelar"),
+        Config.InlineKeyboardButton("Cancelar", callback_data="team_Cancelar")
     ])
 
     return Config.InlineKeyboardMarkup(keyboard)
+
 
 async def start_dayout(update, context, *, mode=MODE_PROD):
     context.user_data["dayout_mode"] = mode
@@ -438,6 +515,7 @@ conv_dayout = Config.ConversationHandler(
 # ==========================================
 
 async def dayout_equipo(session, equipo_objetivo, *, mode="prod", update=None):
+    
     is_test = mode == MODE_TEST
     if mode == MODE_TEST and update is None:
         raise ValueError("MODE_TEST requiere 'update'")
@@ -521,28 +599,48 @@ async def dayout_equipo(session, equipo_objetivo, *, mode="prod", update=None):
         # =====================
         # MENSAJES
         # =====================
+        mensaje_analisis_html = (
+            f"\n" + SEP_HTML + f"\n" 
+            f"Total {equipo_objetivo}: {registro_total_fibs_done}/{registro_total_fibs} FIBS\n"
+        )
+
+        mensaje_analisis_notion = (
+            f"\n" + SEP_TEXT + f"\n"
+            f"Total {equipo_objetivo}: {registro_total_fibs_done}/{registro_total_fibs} FIBS\n"
+        )
+        
         mensaje_html = f"📢 Cierre {equipo_objetivo} {fecha_registro}\n"
-        mensaje_html += f"------------------------------------------------"
-        mensaje_notion = f"{nombre_registro_text} ({fecha_registro})\n\n"
+        mensaje_html += SEP_HTML 
+        mensaje_notion = f"📢 Cierre {equipo_objetivo} {fecha_registro}\n"
+        mensaje_notion += SEP_TEXT
         
         for pl_id, planes in fibs_por_epica.items():
             planes_val = []
+
             for p in planes:
                 porcentaje = await get_page_formula(session, p['id'])
                 fibs = await get_page_fibact(session, p['id'])
                 fibs_target = await get_page_fibs_target(session, p['id'])
+                estado_plan = await get_page_estado_plan(session, p['id'])
+
                 planes_val.append((p, porcentaje, fibs, fibs_target))
-            for plan, porcentaje, fibs, fibs_target in sorted(planes_val, key=lambda x: x[1], reverse=True):
+
+            for plan, porcentaje, fibs, fibs_target in sorted(
+                planes_val, key=lambda x: x[1], reverse=True
+            ):
                 nombre = await get_page_title(session, plan['id'])
-                nombre_short = nombre[:30] + "…" if len(nombre) > 30 else nombre
                 link = notion_page_url(plan['id'])
 
-                mensaje_html += (
-                    f"\n%{porcentaje} | {fibs}/{fibs_target} Fibs | "
-                    f"<a href='{link}'>{telegram_escape(nombre_short)}</a>"
+                estado_plan = await get_page_estado_plan(session, plan['id'])
+
+                mensaje_html += format_plan_telegram(
+                    nombre, estado_plan, porcentaje, fibs, fibs_target, link
                 )
 
-                mensaje_notion += f"\n%{porcentaje} | {fibs}/{fibs_target} Fibs | {nombre_short}"
+                mensaje_notion += format_plan_notion( 
+                    nombre, estado_plan, porcentaje, fibs, fibs_target
+                )
+
 
         # =====================
         # ANÁLISIS Y TAREAS HOY
@@ -553,10 +651,6 @@ async def dayout_equipo(session, equipo_objetivo, *, mode="prod", update=None):
         day_number_val = props.get("DayNumber", {}).get("formula", {}).get("number") or 0
         fibs_esperados = cant_integrantes * day_number_val * ultima_velocidad
 
-        mensaje_analisis = (
-            f"\n------------------------------------------------\n"
-            f"Total {equipo_objetivo}: {registro_total_fibs_done}/{registro_total_fibs} FIBS\n"
-        )
 
         # =====================
         # TAREAS FINALIZADAS HOY
@@ -572,30 +666,53 @@ async def dayout_equipo(session, equipo_objetivo, *, mode="prod", update=None):
 
             match = Config.re.search(r'<a href="([^"]+)">([^<]+)</a>', titulo_html)
             link, texto = (match.group(1), match.group(2)) if match else ("#", titulo_html)
-            tareas_por_responsable[resp].append((texto, link, fibs))
+            tareas_por_responsable[resp].append({
+                "texto": texto,
+                "link": link,
+                "fibs": fibs
+            })
 
-        mensaje_analisis += "------------------------------------------------\n"
+        mensaje_analisis_html += SEP_HTML + f"\n" 
+        mensaje_analisis_notion += SEP_TEXT + f"\n"
 
         if not tareas_por_responsable:
-            mensaje_analisis += "SIN TAREAS CERRADAS HOY\n"
+            mensaje_analisis_html += "SIN TAREAS CERRADAS HOY\n"
+            mensaje_analisis_notion += "SIN TAREAS CERRADAS HOY\n"
         else:
-            mensaje_analisis += "TAREAS CERRADAS HOY\n"
-            for resp, tareas in tareas_por_responsable.items():
-                mensaje_analisis += f"{resp}:\n"
-                for texto, link, fibs in tareas:
-                    fib_label = "FIB" if fibs == 1 else "FIBS"
-                    mensaje_analisis += f"• {fibs} {fib_label} <a href='{link}'> {texto}</a>\n"
+            mensaje_analisis_html += "TAREAS CERRADAS HOY\n"
+            mensaje_analisis_notion += "TAREAS CERRADAS HOY\n"
 
-        dia_semana = Config.datetime.now().weekday()
+            for resp, tareas in tareas_por_responsable.items():
+                mensaje_analisis_html += f"{telegram_escape(resp)}:\n"
+                mensaje_analisis_notion += f"{resp}:\n"
+
+                for t in tareas:
+                    mensaje_analisis_html += format_tarea_telegram(t)
+                    mensaje_analisis_notion += format_tarea_notion(t)
+
+
+        dia_semana = Config.datetime.now(Config.ARG_TZ).weekday()
 
         if dia_semana in (0, 1):
-            mensaje_analisis += (
-                "------------------------------------------------\n"
-                "⌛ Esperando tendencia semanal \n       para analizar datos\n"
+            mensaje_analisis_html += (
+                SEP_HTML + f"\n" +
+                "⌛ Esperando tendencia semanal para analizar datos\n"
+            )
+            mensaje_analisis_notion += (
+                SEP_TEXT + f"\n" +
+                "⌛ Esperando tendencia semanal para analizar datos\n"
             )
         else:
-            mensaje_analisis += (
-                "------------------------------------------------\n"
+            mensaje_analisis_html += (
+                SEP_HTML + f"\n" +
+                "Análisis de datos\n"
+                f"      • {cant_integrantes} Personas | Día: {day_number_val}\n"
+                f"      • Vel. referencia: {ultima_velocidad}\n"
+                f"      • FIBS esperados: {fibs_esperados:.2f}\n"
+                f"      • FIBS cerrados: {registro_total_fibs_done}\n\n"
+            )
+            mensaje_analisis_notion += (
+                SEP_TEXT + f"\n" +
                 "Análisis de datos\n"
                 f"      • {cant_integrantes} Personas | Día: {day_number_val}\n"
                 f"      • Vel. referencia: {ultima_velocidad}\n"
@@ -605,54 +722,55 @@ async def dayout_equipo(session, equipo_objetivo, *, mode="prod", update=None):
 
             # Evaluación velocidad
             if registro_total_fibs_done >= fibs_esperados * 1.1:
-                mensaje_analisis += "Vel: +110% 🔥😎\n"
+                mensaje_analisis_html += "Vel: +110% 🔥😎\n"
+                mensaje_analisis_notion += "Vel: +110% 🔥😎\n"
             elif registro_total_fibs_done >= fibs_esperados:
-                mensaje_analisis += "Vel: 100-110% ☺️\n"
+                mensaje_analisis_html += "Vel: 100-110% ☺️\n"
+                mensaje_analisis_notion += "Vel: 100-110% ☺️\n"
             elif registro_total_fibs_done >= fibs_esperados * 0.85:
-                mensaje_analisis += "Vel: 85-100% 🙂\n"
+                mensaje_analisis_html += "Vel: 85-100% 🙂\n"
+                mensaje_analisis_notion += "Vel: 85-100% 🙂\n"
             elif registro_total_fibs_done >= fibs_esperados * 0.7:
-                mensaje_analisis += "Vel: 70-85% 😐\n"
+                mensaje_analisis_html += "Vel: 70-85% 😐\n"
+                mensaje_analisis_notion += "Vel: 70-85% 😐\n"
             elif registro_total_fibs_done >= fibs_esperados * 0.6:
-                mensaje_analisis += "Vel: 60-70% 🙃\n"
+                mensaje_analisis_html += "Vel: 60-70% 🙃\n"
+                mensaje_analisis_notion += "Vel: 60-70% 🙃\n"
             elif registro_total_fibs_done >= fibs_esperados * 0.5:
-                mensaje_analisis += "Vel: 50-60% 😖\n"
+                mensaje_analisis_html += "Vel: 50-60% 😖\n"
+                mensaje_analisis_notion += "Vel: 50-60% 😖\n"
             else:
-                mensaje_analisis += "Vel: -50% 🚨☠️\n"
+                mensaje_analisis_html += "Vel: -50% 🚨☠️\n"
+                mensaje_analisis_notion += "Vel: -50% 🚨☠️\n"
 
 
-        mensaje_html += mensaje_analisis
-        mensaje_notion += mensaje_analisis
+        mensaje_html += mensaje_analisis_html
+        mensaje_notion += mensaje_analisis_notion
 
         # =====================
         # EFECTOS SEGÚN MODO
         # =====================
         if is_test:
+            await post_comment(session, registro['id'], mensaje_notion)
             await enviar_a_usuario(update, mensaje_html)
-            buf = await generar_curva_parcial_equipo(equipo_objetivo)
-            caption = f"📈 Burndown {equipo_objetivo} | {fecha_registro}"
-            chat_id = update.effective_chat.id  # obtiene el chat de origen
-            await update.get_bot().send_photo(
-                chat_id=chat_id,
-                photo=buf,
-                caption=caption,
-            )
+            try:
+                buf = await generar_curva_parcial_equipo(equipo_objetivo)
+                caption = f"📈 Burndown {equipo_objetivo} | {fecha_registro}"
+                bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
+                chat_id = update.effective_chat.id 
+                await post_image_to_page(session, registro['id'], buf, caption, bot, chat_id=chat_id)
+                await update.get_bot().send_photo(chat_id=chat_id,photo=buf,caption=caption,)
+            except Exception as e:
+                print(f"[ERROR] Curva {equipo_objetivo}: {e}")
         else:
             await post_comment(session, registro['id'], mensaje_notion)
             await enviar_a_telegram(mensaje_html, equipo_objetivo)
-
             try:
                 buf = await generar_curva_parcial_equipo(equipo_objetivo)
                 caption = f"📈 Burndown {equipo_objetivo} | ({fecha_registro})"
-
                 bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
                 await post_image_to_page(session, registro['id'], buf, caption, bot, Config.CHAT_ID)
-
-                await bot.send_photo(
-                    chat_id=Config.CHAT_ID,
-                    photo=buf,
-                    caption=caption,
-                    message_thread_id=Config.THREAD_IDS.get(equipo_objetivo),
-                )
+                await bot.send_photo(chat_id=Config.CHAT_ID,photo=buf,caption=caption,message_thread_id=Config.THREAD_IDS.get(equipo_objetivo),)
             except Exception as e:
                 print(f"[ERROR] Curva {equipo_objetivo}: {e}")
 

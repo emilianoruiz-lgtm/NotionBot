@@ -1,159 +1,168 @@
 # ==========================================
-# 1. IMPORTS
+# IMPORTS
 # ==========================================
 
 # Módulos Locales
 import Config
-from modules.DayIN import DayIN
-from modules.Burn import burndown, newday
-from modules.RDs import RDs_comments
-from modules.mundopizza.menump import get_menu_text
+import Horarios
+from modules.Agenda import job_agenda_preliminar, job_agenda_automatica
+from modules.DayOUT import job_dayout
+from modules.DayIN import job_dayin
+from modules.NewDay import job_newday
+from modules.Burn import job_burn
+from modules.mundopizza.menump import job_food, job_pay
+from modules.jobs import job_dayin
+from modules.RDs import job_rd
 
-ahora = Config.datetime.now(Config.ARG_TZ)
 
+# ==========================================
+# HELPERS DEL DOMINIO
+# ==========================================
+def next_valid_run(job_time: Config.time, days=(0,1,2,3,4)):
+    now = Config.datetime.now(Config.ARG_TZ)
+    job_dt = Config.datetime.combine(now.date(), job_time, Config.ARG_TZ)
+    if job_dt <= now: job_dt += Config.timedelta(days=1)
+    while job_dt.weekday() not in days:
+        job_dt += Config.timedelta(days=1)
+    return job_dt
 
-def is_weekday(date_to_check: Config.datetime) -> bool:
-    return date_to_check.weekday() in (0, 1, 2, 3, 4)
-
-def is_friday(date_to_check: Config.datetime) -> bool:
-    return date_to_check.weekday() == 4
-
-# ============================
-# JOB DAYIN
-# ============================
-async def job_dayin(context: Config.CallbackContext):
-    print("📤 job_dayin disparado a las", Config.datetime.now(Config.ARG_TZ))
+async def safe_job_runner(ctx, job_func, job_name, grace_period=300):
+    start_ts = Config._time.time()
+    task = None
     try:
-        resultado = await DayIN()
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_DEBUG,
-            text=f"[DayIN automático realizado]\n{resultado}",
-            parse_mode="HTML"
-        )
-        print("📤 DayIN automático enviado")
+        print(f"[JOB] ▶ Ejecutando '{job_name}'...")
+        task = Config.asyncio.create_task(Config.maybe_await(job_func, ctx))
+        await Config.asyncio.wait_for(task, timeout=grace_period)
+        print(f"[JOB] ✔ '{job_name}' finalizado ({Config._time.time() - start_ts:.1f}s)")
+    except Config.asyncio.TimeoutError:
+        print(f"[JOB] ⏱ Timeout en '{job_name}', cancelando tarea...")
+        if task:
+            task.cancel()
+            try:
+                await task
+            except Config.asyncio.CancelledError:
+                print(f"[JOB] 🗑 Tarea '{job_name}' cancelada correctamente.")
+            except Exception as e:
+                print(f"[JOB] ⚠️ Excepción al cancelar tarea '{job_name}': {e}")
     except Exception as e:
-        print(f"❌ Error en job_dayin: {e}")
+        tb = Config.traceback.format_exc()
+        print(f"[JOB] ❌ Error en '{job_name}': {e}\n{tb}")
+        if ctx and getattr(ctx, "bot", None):
+            try:
+                await ctx.bot.send_message(chat_id=Config.ADMIN_CHAT_ID, text=f"❌ Error en job '{job_name}': {e}")
+            except Exception:
+                pass
+    finally:
+        print(f"[JOB] ⏹ '{job_name}' terminado.\n", flush=True)
 
+async def clear_jobs(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    job_queue = context.job_queue
+    if job_queue is not None:
+        jobs = job_queue.jobs()
+        for job in jobs:
+            job.schedule_removal()
+            print(f"🗑️ Job '{job.name}' eliminado manualmente.\n")
+        await update.message.reply_text("✅ JobQueue limpiado manualmente.", parse_mode="HTML")
+    else:
+        await update.message.reply_text("⚠️ JobQueue no inicializado.", parse_mode="HTML")
 
+def schedule_daily_job(app, job_func, job_time, days=(0, 1, 2, 3, 4), job_name="Job", grace_period=600):
+    """Agrega un job diario robusto (solo lunes-viernes, respeta hora y TZ)."""
+    if job_time.tzinfo is None:
+        job_time = job_time.replace(tzinfo=Config.ARG_TZ)
+        print(f"⚠️ [DEBUG] job_time '{job_name}' no tenía tzinfo, se asignó {Config.ARG_TZ}")
 
+    async def job_wrapper(ctx):
+        try:
+            await safe_job_runner(ctx, job_func, job_name, grace_period)
+        except Exception as e:
+            print(f"❌ Excepción no capturada en job_wrapper '{job_name}': {e}")
 
-# ============================
-# JOB BURN
-# ============================
-async def job_burn(context: Config.CallbackContext):
-    print("🔥 Ejecutando job_burn", Config.datetime.now(Config.ARG_TZ))
-    resultado = await burndown()
-    if resultado:
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_DEBUG,
-            text=str(resultado),
-            parse_mode="HTML"
-        )
+    # Eliminar previos
+    for j in app.job_queue.get_jobs_by_name(job_name):
+        print(f"🧹 Eliminando job existente con nombre {job_name}")
+        j.schedule_removal()
 
-# ============================
-# JOB NEWDAY
-# ============================
-async def job_newday(context: Config.CallbackContext):
-    print("📤 job_newday disparado a las", Config.datetime.now(Config.ARG_TZ))
-    resultado = await newday()
-    if resultado:
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_DEBUG,
-            text=str(resultado),
-            parse_mode="HTML"
-        )
+    if isinstance(job_time, Config.datetime):
+        # ya es datetime con o sin tz
+        if job_time.tzinfo is None:
+            job_time = job_time.replace(tzinfo=Config.ARG_TZ)
+        else:
+            job_time = job_time.astimezone(Config.ARG_TZ)
+    elif isinstance(job_time, Config.time):
+        # es un time plano
+        if job_time.tzinfo is None:
+            job_time = job_time.replace(tzinfo=Config.ARG_TZ)
+    else:
+        raise TypeError(f"job_time debe ser datetime o time, no {type(job_time)}")
 
-# ============================
-# JOB RD
-# ============================
+    # Calcular próximo run correcto
+    next_run = next_valid_run(job_time, days)
 
-async def job_rd(context: Config.CallbackContext):
-    print("📤 job_rd disparado a las", Config.datetime.now(Config.ARG_TZ))
-    resultado = await RDs_comments(concatenado=False)
-    if resultado:
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_LOG,
-            text=str(resultado),
-            parse_mode="HTML"
-        )
+    # Crear el job (run_daily usa hora, pero forzamos initial datetime)
+    app.job_queue.run_repeating(
+        job_wrapper,
+        interval=Config.timedelta(days=1),
+        first=next_run,
+        name=job_name
+    )
 
+    print(f"📋 {next_run.strftime('%A %d/%m/%Y |%H:%M:%S|')} → {job_name}")
 
+async def job_restart(context: Config.ContextTypes.DEFAULT_TYPE):
+    print("♻️ Reiniciando bot automáticamente...")
+    await Config.asyncio.sleep(2)
+    Config.os.execv(Config.sys.executable, ['python'] + Config.sys.argv)
 
-# ============================
-# JOB AGENDA SEM PROX
-# ============================
-async def job_agenda_semana_prox(context:Config. CallbackContext):
-    if not is_friday(ahora) or ahora.date() in Config.FERIADOS:
-        print(
-            f"⚠️[DEBUG] Agenda semana prox no ejecutada: "
-            f"hoy ({ahora.strftime('%Y-%m-%d')}) no es viernes o es feriado."
-        )
-        return
+# ==========================================
+# LÓGICA DEBUG JOBS
+# ==========================================
+async def debug_jobs(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    print(f"[CMD] {Config.datetime.now(Config.ARG_TZ).strftime('%d/%m/%y %H:%M')} - Mostrar Jobs programados ")
+    jobs = context.job_queue.jobs()
+    if not jobs:
+        msg = "⛔ No hay jobs programados en el JobQueue."
+    else:
+        ahora = Config.datetime.now(Config.ARG_TZ)
+        hora_map = {
+            "DayIN automático": Horarios.hora_dayin,
+            "Comentarios RD": Horarios.hora_rd,
+            "Primer burn del día": Horarios.hora_burn1,
+            "Segundo burn del día": Horarios.hora_burn2,
+            "Tercer burn del día": Horarios.hora_burn3,
+            "Prelim. agenda mañana": Horarios.hora_agenda_pre,
+            "Agenda de mañana": Horarios.hora_agenda,
+            "Último burn del día": Horarios.hora_burn4,
+            "DayOut automático": Horarios.hora_dayout,
+            "Nuevos registros": Horarios.hora_newday,
+            "Food reminder": Horarios.hora_food,
+            "Pay reminder": Horarios.hora_pay,
+        }
 
-    try:
-        print(f"📤 job_agenda_semana_prox disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
-        resultado = await AgendaPlAdminSemanaSiguiente()
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_EPROC,
-            text=f"{resultado}",
-            parse_mode="HTML"
-        )
-        print("📤 Mensaje de Agenda automática enviado")
-    except Exception as e:
-        print(f"❌ Error en job_agenda_semana_prox: {e}")
+        msg = f"⏰ Jobs programados (hoy)\n\n📅 {ahora.strftime('%d/%m/%y')}\n"
 
+        entries = []
+        for job in jobs:
+            job_time = hora_map.get(job.name)
+            if not job_time:
+                continue
+            
+            job_dt_today = ahora.replace(hour=job_time.hour, minute=job_time.minute, second=0, microsecond=0)
+            vencido = job_dt_today <= ahora
+            entries.append((job_dt_today, job.name, job_time.strftime("%H:%M"), vencido))
 
-# ============================
-# JOB FOOD REMINDER
-# ============================
-async def job_food(context: Config.CallbackContext):
-    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
-        print(f"⚠️[DEBUG] food no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
-        return
-
-    try:
-        print(f"📤 job_food disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # Primer mensaje: recordatorio
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_TEAM,
-            text="¡Acuérdense de pedir comida!!",
-            parse_mode="HTML"
-        )
-        print("📤 Mensaje de food reminder enviado")
-
-        # Segundo mensaje: menú
-        menu_text = get_menu_text()
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_TEAM,
-            text=menu_text,
-            parse_mode="HTML"
-        )
-        print("📤 Menú enviado")
-        
-    except Exception as e:
-        print(f"❌ Error en job_food: {e}")
-
-# ============================
-# JOB PAY REMINDER
-# ============================
-async def job_pay(context: Config.CallbackContext):
-    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
-        print(f"⚠️[DEBUG] pay no ejecutada: hoy ({ahora.strftime('%Y-%m-%d')}) no es un día hábil o es feriado.")
-        return
-
-    try:
-        print(f"📤 job_pay disparado a las {ahora.strftime('%Y-%m-%d %H:%M:%S')}")
-        await context.bot.send_message(
-            chat_id=Config.CHAT_ID_TEAM,
-            text=f"Acuerdensé de pagar la comida 💵!",
-            parse_mode="HTML"
-        )
-        print("📤 Mensaje de pay reminder enviado")
-    except Exception as e:
-        print(f"❌ Error en job_pay: {e}")
-
-
+        for _, name, timestr, vencido in sorted(entries, key=lambda x: x[0]):
+            icon = "❌" if vencido else "✅"
+            nombre_corto = name.replace("automático", "auto").replace("Primer burn del día", "Burn1") \
+                              .replace("Segundo burn del día", "Burn2").replace("Tercer burn del día", "Burn3") \
+                              .replace("Último burn del día", "Burn4").replace("Prelim. agenda mañana", "Agenda pre") \
+                              .replace("Agenda de mañana", "Agenda")
+            msg += f"{icon} {timestr} {nombre_corto}\n" 
+            
+    if update.callback_query:
+        await update.callback_query.edit_message_text(msg, parse_mode=Config.ParseMode.HTML)
+    else:
+        await update.message.reply_text(msg, parse_mode=Config.ParseMode.HTML)
 
 
 

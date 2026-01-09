@@ -11,6 +11,47 @@ import Config
 # ==========================================
 
 ESPERANDO_FECHA_AGENDA = 300
+ACCION_LABELS = {
+    "ok": "Confirmado",
+    "error": "Con errores",
+    "auto": "Auto-confirmado",
+}
+ICONOS_ACCION = {
+    "ok": "✅",
+    "error": "❌",
+    "auto": "🤖",
+    "cancel": "🚫",
+}
+
+NOTION_CORRECCION_URL = (
+    "https://www.notion.so/eproc/"
+    "7eb7b4c654f14203ac8dcd7d864dc722"
+    "?v=284152ff88c5807ab848000c530e12a3"
+)
+
+ACCION_FEEDBACK = {
+    "ok": lambda u: f"✅ Agenda confirmada por {u}",
+    "error": lambda u: (
+        f"❌ Errores reportados por {u}\n\n"
+        f"✏️ Corregir en Notion:\n"
+        f"{NOTION_CORRECCION_URL}"
+    ),
+}
+
+ACCION_TEXTO_LOG = {
+    "ok": "Agenda confirmada por",
+    "error": "Errores reportados por",
+    "auto": "Agenda auto-confirmada por",
+}
+
+PREGUNTAS_EXTRA_POR_EQUIPO = {
+    "Admin": [
+        "¿Hay <b>vacaciones</b>, <b>días de licencia</b> o <b>eventos logísticos</b> asociados a {responsables} previstos para mañana que no estén registrados?",
+    ],
+    "DEFAULT": [
+        "¿Hay <b>visitas a planta</b>, <b>inducciones</b>, <b>estudios médicos</b>, <b>vacaciones</b> o <b>días de licencia</b> asociados a {responsables} previstos para mañana que no estén registrados?",
+    ],
+}
 
 
 # ==========================================
@@ -32,8 +73,23 @@ def fecha_inicio(registro):
 
 
 # ==========================================
-# FUNCIONES DE DOMINIO (AGENDA)
+# HELPERS
 # ==========================================
+def get_menciones_equipo(equipo):
+    cfg = Config.EQUIPOS_CONFIG.get(equipo, {})
+    integrantes = cfg.get("integrantes", [])
+
+    menciones = []
+    for nombre in integrantes:
+        alias = Config.ALIAS_PERSONAS.get(nombre)
+        if alias and alias.startswith("@"):
+            menciones.append(alias)
+        else:
+            # fallback seguro
+            menciones.append(f"@{nombre.split()[0]}")
+
+    return menciones
+
 
 def get_team_config(equipo):
     cfg = Config.EQUIPOS_CONFIG.get(equipo, {})
@@ -69,7 +125,6 @@ def titulo_con_guiones(nombre, total=30):
     base = f"{nombre} "
     return base + "-" * max(0, total - len(base))
 
-
 def get_hora(props):
     date_prop = props.get('Date', {}).get('date', {})
     if not date_prop or not date_prop.get('start'):
@@ -91,6 +146,121 @@ def get_hora(props):
         return dt.strftime("%H:%M")
     except:
         return None
+
+def get_titulo_registro(props):
+    title_prop = props.get("Name", {}).get("title", [])
+    if title_prop:
+        return "".join(t.get("plain_text", "") for t in title_prop)
+    return "Sin título"
+
+def get_cliente(props):
+    cliente_prop = props.get("Cliente")
+    if not cliente_prop:
+        return None
+
+    roll = cliente_prop.get("rollup")
+    if not roll:
+        return None
+
+    if roll.get("type") != "array":
+        return None
+
+    textos = []
+
+    for el in roll.get("array", []):
+        t = el.get("type")
+
+        if t == "title":
+            textos.append("".join(x["plain_text"] for x in el.get("title", [])))
+
+        elif t == "rich_text":
+            textos.append("".join(x["plain_text"] for x in el.get("rich_text", [])))    
+
+
+        elif t == "select":
+            if el.get("select"):
+                textos.append(el["select"].get("name"))
+
+        elif t == "multi_select":
+            textos.extend(ms["name"] for ms in el.get("multi_select", []))
+
+        elif t == "formula":
+            f = el.get("formula", {})
+            textos.append(
+                f.get("string")
+                or str(f.get("number"))
+                or str(f.get("boolean"))
+            )
+
+    textos = [t for t in textos if t]
+    return ", ".join(textos) if textos else None
+
+def filtrar_registros_por_equipo(registros, equipo):
+    if equipo == "General":
+        return registros
+
+    filtrados = []
+
+    for r in registros:
+        equipos = r["properties"].get("Equipo", {}).get("multi_select", [])
+        nombres = [e["name"] for e in equipos]
+
+        if equipo in nombres:
+            filtrados.append(r)
+
+    return filtrados
+
+def generar_agenda_por_fecha_y_equipo(fecha, equipo):
+    registros = get_registros_calendar_por_fecha(fecha)
+    registros_equipo = filtrar_registros_por_equipo(registros, equipo)
+    return resumen_calendar(registros_equipo, fecha), registros_equipo
+
+def armar_mensaje_confirmacion(equipo, fecha, texto_agenda, hay_registros):
+    _, nombre_mostrar = get_team_config(equipo)
+    f"Equipo: <b>{nombre_mostrar}</b>\n\n"
+    # 🔹 Buscar pregunta extra por equipo (si existe)
+
+    preguntas = (
+        PREGUNTAS_EXTRA_POR_EQUIPO.get(equipo)
+        or PREGUNTAS_EXTRA_POR_EQUIPO.get("DEFAULT", [])
+    )
+
+    bloque_preguntas = ""
+
+    if equipo != "General" and preguntas:
+        menciones = get_menciones_equipo(equipo)
+        menciones_txt = " ".join(menciones)
+
+        preguntas_formateadas = [
+            p.format(responsables=menciones_txt) for p in preguntas
+        ]
+
+        bloque_preguntas = (
+            "\n\n"
+            + "\n".join(f" {p}" for p in preguntas_formateadas)
+        )
+    else:
+        bloque_preguntas = ""
+
+
+
+    if hay_registros:
+        return (
+            f"<b>REVISIÓN DE AGENDA</b>\n"
+            f"Equipo: <b>{equipo}</b>\n\n"
+            f"{texto_agenda}\n\n"
+            "¿Los registros previstos son correctos?"
+            f"{bloque_preguntas}"
+        )
+    else:
+        return (
+            f"<b>REVISIÓN DE AGENDA</b>\n"
+            f"Equipo: <b>{equipo}</b>\n\n"
+            "⚠️ No hay registros cargados para mañana.\n"
+            "¿Esto es correcto?"
+            f"{bloque_preguntas}"
+        )
+
 
 
 # ==========================================
@@ -179,6 +349,22 @@ async def start_agenda(update: Config.Update, context: Config.CallbackContext):
     )
     return ESPERANDO_FECHA_AGENDA
 
+def keyboard_confirmacion_agenda(equipo, fecha):
+    fecha_str = fecha.strftime("%Y-%m-%d")
+
+    return Config.InlineKeyboardMarkup([
+        [
+            Config.InlineKeyboardButton(
+                "✅ Correcto",
+                callback_data=f"agenda_ok:{equipo}:{fecha_str}"
+            ),
+            Config.InlineKeyboardButton(
+                "❌ Hay errores",
+                callback_data=f"agenda_error:{equipo}:{fecha_str}"
+            )
+        ]
+    ])
+
 
 # ==========================================
 # CONVERSATION HANDLERS
@@ -212,11 +398,12 @@ async def recibir_fecha_agenda(update: Config.Update, context: Config.CallbackCo
         await query.message.reply_text("⚠️ Opción inválida.")
         return Config.ConversationHandler.END
 
-    await query.message.reply_text("🕐 Revisando calendario...")
+    await query.message.edit_text("🕐 Revisando calendario...")
+
     resultado = await Config.asyncio.to_thread(generar_agenda_por_fecha, fecha)
-    await query.message.reply_text(
+    await query.message.edit_text(
         resultado,
-        parse_mode=Config.ParseMode.HTML,
+        parse_mode=Config.ParseMode.HTML
     )
 
     return Config.ConversationHandler.END
@@ -226,13 +413,85 @@ conv_agenda = Config.ConversationHandler(
     states={
         ESPERANDO_FECHA_AGENDA: [
             Config.CallbackQueryHandler(
-                recibir_fecha_agenda, pattern="^agenda_"
+                recibir_fecha_agenda, pattern="^agenda_(antesayer|ayer|hoy|manana|pasadomanana|cancelar)$"
+
             )
         ]
     },
     fallbacks=[Config.CommandHandler("cancelar", Config.cancelar)],
 )
 
+async def agenda_confirmacion_handler(update: Config.Update, context: Config.CallbackContext):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    user = query.from_user
+    print("📥 CALLBACK:", data)
+    try:
+        prefix, rest = data.split("_", 1)
+        accion, equipo, fecha = rest.split(":")                 
+    except ValueError as e:
+        print("❌ ERROR parseando callback:", data, e)
+        return
+
+    username = (
+        f"@{user.username}"
+        if user.username
+        else f"{user.first_name} {user.last_name or ''}".strip()
+    )
+
+    # 🧾 Registro interno (memoria en runtime)
+    key = f"{equipo}:{fecha}"
+    context.application.bot_data.setdefault("agenda_confirmaciones", {})
+    context.application.bot_data["agenda_confirmaciones"][key] = {
+        "accion": accion,
+        "usuario": username,
+        "timestamp": Config.datetime.now(Config.ARG_TZ)
+    }
+
+    accion, equipo, fecha = data.replace("agenda_", "").split(":")
+
+    usuario = query.from_user.full_name
+    icono = ICONOS_ACCION.get(accion, "ℹ️")
+    label = ACCION_LABELS.get(accion, accion.upper())
+
+    # 🔔 Aviso al chat central
+    texto_log = ACCION_TEXTO_LOG.get(accion, "Acción registrada por")
+
+    mensaje_log = (
+        f"📅 <b>Agenda {fecha}</b>\n"
+        f"Equipo <b>{equipo}</b>\n"
+        f"{texto_log} <b>{usuario}</b>\n"
+        f"{icono} <b>{label}</b>"
+    )
+
+
+    try:
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_DEBUG,
+            text=mensaje_log,
+            parse_mode=Config.ParseMode.HTML
+        )
+    except Config.BadRequest as e:
+        print(f"⚠️ No se pudo enviar log a CHAT_ID_DEBUG ({Config.CHAT_ID_DEBUG}): {e}")
+
+    # 🧼 Feedback en el chat del equipo
+    await query.edit_message_reply_markup(None)
+
+    if accion == "ok":
+        mensaje_equipo = f"✅ Agenda confirmada por {username}"
+
+    elif accion == "error":
+        mensaje_equipo = ACCION_FEEDBACK.get(
+            accion,
+            lambda u: f"ℹ️ Acción registrada por {u}"
+        )(username)
+
+    else:
+        mensaje_equipo = f"ℹ️ Acción registrada por {username}: {accion}"
+
+    await query.message.reply_text(mensaje_equipo)              
 
 # ==========================================
 # LÓGICA DE ARMADO DE AGENDA
@@ -315,12 +574,26 @@ def resumen_calendar(registros, fecha):
                 tipo = get_tipo(props)
                 personas = get_personas(props)
                 hora = get_hora(props)
+                titulo_registro = get_titulo_registro(props).strip().lower().capitalize()
+                cliente = get_cliente(props)
 
                 for p in personas or ["Sin persona"]:
-                    if hora:
-                        resumen_lines.append(f"      {p} | {tipo} {hora}")
+                    if tipo.lower() == "visita a planta" and cliente:
+                        if hora:
+                            resumen_lines.append(f"      {p} | Visita {cliente} {hora}")
+                        else:
+                            resumen_lines.append(f"      {p} | Visita {cliente} ")
+
+                    elif tipo.lower() in ["evento personal", "evento eproc"]:
+                        if hora:
+                            resumen_lines.append(f"      {p} | {titulo_registro} {hora}")
+                        else:
+                            resumen_lines.append(f"      {p} | {titulo_registro}")
                     else:
-                        resumen_lines.append(f"      {p} | {tipo}")
+                        if hora:
+                            resumen_lines.append(f"      {p} | {tipo} {hora}")
+                        else:
+                            resumen_lines.append(f"      {p} | {tipo}")
         else:
             resumen_lines.append(Config.NO_REGISTROS_TEXT)
 
@@ -348,6 +621,57 @@ async def job_agenda_preliminar(context: Config.CallbackContext):
         print("📤 Mensaje de Agenda Preliminar enviado")
     except Exception as e:
         print(f"❌ Error en job_agenda_preliminar: {e}")
+
+
+# ============================
+# JOB AGENDA PRELIMINAR POR EQUIPO
+# ============================
+
+async def job_agenda_preliminar_por_equipo(context: Config.CallbackContext):
+    ahora = Config.datetime.now(Config.ARG_TZ)
+
+    if not is_weekday(ahora) or ahora.date() in Config.FERIADOS:
+        print("⚠️ Job agenda preliminar por equipo no ejecutado (no hábil / feriado)")
+        return
+
+    fecha = ahora.date() + Config.timedelta(days=1)
+
+    print(f"📤 Agenda preliminar por equipo ({fecha})")
+
+    for equipo, cfg in Config.EQUIPOS_CONFIG.items():
+        chat_id = cfg.get("chat_id")
+        if equipo == "General":
+            continue  # ⛔ NO se evalúa, NO se procesa, NO existe acá
+
+        if not chat_id:
+            continue  # equipo sin chat asignado
+
+        try:
+            texto, regs = await Config.asyncio.to_thread(
+                generar_agenda_por_fecha_y_equipo,
+                fecha,
+                equipo
+            )
+
+            mensaje = armar_mensaje_confirmacion(
+                equipo=equipo,  # 👈 CLAVE
+                fecha=fecha,
+                texto_agenda=texto,
+                hay_registros=bool(regs)
+            )
+
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=mensaje,
+                parse_mode="HTML",
+                reply_markup=keyboard_confirmacion_agenda(equipo, fecha)
+            )
+
+            print(f"✅ Enviado a {equipo}")
+
+        except Exception as e:
+            print(f"❌ Error enviando agenda a {equipo}: {e}")
+
 
 # ============================
 # JOB AGENDA AUTOMÁTICA

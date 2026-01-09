@@ -12,7 +12,8 @@ from modules.DayIN import DayIN, DayInEquipo
 # ==========================================
 
 CONFIRMAR = 999
-ESPERANDO_EQUIPO_DAYIN = 100
+CONFIRM_OK = "confirm_ok"
+CONFIRM_CANCEL = "confirm_cancel"
 
 # ==========================================
 # HELPERS GENERALES
@@ -33,13 +34,14 @@ def wrap_handler(func):
 # ==========================================
 # CANCELAR / GENERIC
 # ==========================================
-
 async def cancelar(update: Config.Update, context: Config.CallbackContext):
     if update.message:
         await update.message.reply_text("❌ Conversación cancelada.")
     elif update.callback_query:
         await update.callback_query.message.reply_text("❌ Conversación cancelada.")
     return Config.ConversationHandler.END
+
+
 
 
 async def generic_message(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
@@ -51,37 +53,54 @@ async def generic_message(update: Config.Update, context: Config.ContextTypes.DE
 # CONFIRMACIÓN GLOBAL
 # ==========================================
 
-async def manejar_confirmacion(update: Config.Update, context: Config.CallbackContext):
-    respuesta = update.message.text.strip().lower()
+async def confirmar_inline(update: Config.Update, context: Config.CallbackContext):
+    query = update.callback_query
+    await query.answer()
 
-    if respuesta in ("sí", "si"):
+    data = query.data
+
+    if data == CONFIRM_OK:
         if "pendiente" in context.user_data:
             funcion_real = context.user_data.pop("pendiente")
-            return await funcion_real(update, context)
+
+            await query.edit_message_text("⏳ Ejecutando acción...")
+            await funcion_real(update, context)
         else:
-            await update.message.reply_text("⚠️ No hay ninguna acción pendiente.")
+            await query.edit_message_text("⚠️ No hay ninguna acción pendiente.")
     else:
-        await update.message.reply_text("❌ Acción cancelada.")
+        await query.edit_message_text("❌ Acción cancelada.")
 
     return Config.ConversationHandler.END
 
 
+
 def confirmar_handler(comando: str, funcion_real):
+
     async def handler(update: Config.Update, context: Config.CallbackContext):
         context.user_data["pendiente"] = funcion_real
+
+        keyboard = Config.InlineKeyboardMarkup([
+            [
+                Config.InlineKeyboardButton("✅ Confirmar", callback_data=CONFIRM_OK),
+                Config.InlineKeyboardButton("❌ Cancelar", callback_data=CONFIRM_CANCEL),
+            ]
+        ])
+
         await update.message.reply_text(
-            f"⚠️ Vas a ejecutar <b>{comando}</b>.\n¿Confirmás? (sí/no)",
+            f"⚠️ Vas a ejecutar <b>{comando}</b>.\n¿Confirmás?",
+            reply_markup=keyboard,
             parse_mode=Config.ParseMode.HTML,
         )
+
         return CONFIRMAR
 
     return Config.ConversationHandler(
         entry_points=[Config.CommandHandler(comando, handler)],
         states={
             CONFIRMAR: [
-                Config.MessageHandler(
-                    Config.filters.TEXT & ~Config.filters.COMMAND,
-                    manejar_confirmacion,
+                Config.CallbackQueryHandler(
+                    confirmar_inline,
+                    pattern=f"^({CONFIRM_OK}|{CONFIRM_CANCEL})$"
                 )
             ]
         },
@@ -89,91 +108,5 @@ def confirmar_handler(comando: str, funcion_real):
     )
 
 
-# ==========================================
-# TECLADOS
-# ==========================================
 
-def create_team_keyboard(include_todos=False):
-    keyboard = [
-        [
-            Config.InlineKeyboardButton("Caimanes", callback_data="team_Caimanes"),
-            Config.InlineKeyboardButton("Zorros", callback_data="team_Zorros"),
-            Config.InlineKeyboardButton("Huemules", callback_data="team_Huemules"),
-        ]
-    ]
-
-    if include_todos:
-        keyboard.append([
-            Config.InlineKeyboardButton("Todos", callback_data="team_Todos"),
-        ])
-
-    keyboard.append([
-        Config.InlineKeyboardButton("Cancelar", callback_data="team_Cancelar"),
-    ])
-
-    return Config.InlineKeyboardMarkup(keyboard)
-
-
-
-# ==========================================
-# CONVERSACIÓN /DAYIN
-# ==========================================
-
-async def start_dayin(update: Config.Update, context: Config.CallbackContext):
-    await update.message.reply_text(
-        "📋 DayIN:",
-        reply_markup=create_team_keyboard(include_todos=True),
-    )
-    return ESPERANDO_EQUIPO_DAYIN
-
-
-async def recibir_equipo_dayin(update: Config.Update, context: Config.CallbackContext):
-    query = update.callback_query
-    await query.answer()
-
-    equipo = query.data.replace("team_", "")
-
-    if equipo == "Cancelar":
-        await query.message.reply_text("❌ Operación cancelada.")
-        return Config.ConversationHandler.END
-
-    if equipo == "Todos":
-        await query.message.reply_text("⚡ Ejecutando DayIN de todos los equipos...")
-        for eq in Config.EQUIPOS:
-            await DayInEquipo(eq)
-        await query.message.reply_text(
-            "✔️ DayIN de TODOS los equipos publicado en Notion"
-        )
-    else:
-        await query.message.reply_text(f"⚡ Ejecutando DayIN de {equipo}...")
-        await DayInEquipo(equipo)
-        await query.message.reply_text(
-            f"✔️ DayIN de {equipo} publicado en Notion"
-        )
-
-    return Config.ConversationHandler.END
-
-
-conv_dayin = Config.ConversationHandler(
-    entry_points=[Config.CommandHandler("dayin", start_dayin)],
-    states={
-        ESPERANDO_EQUIPO_DAYIN: [
-            Config.CallbackQueryHandler(recibir_equipo_dayin, pattern="^team_")
-        ]
-    },
-    fallbacks=[Config.CommandHandler("cancelar", cancelar)],
-)
-
-
-# ==========================================
-# COMANDO SIMPLE /DAYIN (DIRECTO)
-# ==========================================
-
-@wrap_handler
-async def dayin(update: Config.Update, context: Config.CallbackContext):
-    resultado = await DayIN()
-    await update.message.reply_text(
-        resultado,
-        parse_mode=Config.ParseMode.HTML,
-    )
 

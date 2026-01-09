@@ -1,34 +1,35 @@
-import asyncio
-import aiohttp
-from datetime import datetime, timedelta
-from telegram import Bot
-from telegram.constants import ParseMode
-import html
+# ==========================================
+# IMPORTS
+# ==========================================
+
+# Módulos Locales
 import Config
 
-# --- FUNCIONES TELEGRAM ---
-def telegram_escape(text: str) -> str:
-    return html.escape(text or "")
 
-async def enviar_a_telegram(mensaje_html, equipo: str):
-    print(f"Enviando comentario a Telegram para {equipo}...")
-    bot = Bot(token=Config.TELEGRAM_TOKEN)
-    try:
-        thread_id = Config.THREAD_IDS.get(equipo)
-        if not thread_id:
-            print(f"⚠️ No se encontró thread_id para {equipo}, se enviará al chat principal.")
-            await bot.send_message(chat_id=Config.CHAT_ID, text=mensaje_html, parse_mode=ParseMode.HTML)
-        else:
-            await bot.send_message(
-                chat_id=Config.CHAT_ID,
-                text=mensaje_html,
-                parse_mode=ParseMode.HTML,
-                message_thread_id=thread_id
-            )
-    except Exception as e:
-        print("Error enviando mensaje a Telegram:", e)
+# ==========================================
+# CONFIGURACIÓN Y CONSTANTES
+# ==========================================
 
-# --- FUNCIONES NOTION ---
+
+
+# ==========================================
+# UTILIDADES DE SISTEMA Y TIEMPO
+# ==========================================
+
+
+
+
+# ==========================================
+# HELPERS DEL DOMINIO
+# ==========================================
+
+
+
+
+# ==========================================
+# FETCH NOTION
+# ==========================================
+
 async def fetch_json(session, url, method="GET", payload=None):
     if method == "POST":
         async with session.post(url, headers=Config.HEADERS, json=payload) as resp:
@@ -37,19 +38,13 @@ async def fetch_json(session, url, method="GET", payload=None):
         async with session.get(url, headers=Config.HEADERS) as resp:
             return await resp.json()
 
-# --- MAPEO DE USUARIOS ---
 async def get_users_map(session):
     url = "https://api.notion.com/v1/users"
     data = await fetch_json(session, url)
     users = data.get("results", [])
     return {user["id"]: user.get("name", "Desconocido") for user in users}
 
-# --- GET COMMENTS ---
 async def get_comments(session, page_id, users_map):
-    """
-    Devuelve una lista de tuplas (contenido, autor) de todos los comentarios de la página,
-    ignorando comentarios de usuarios llamados 'Zz'.
-    """
     url = f"https://api.notion.com/v1/comments?block_id={page_id}"
     data = await fetch_json(session, url)
     results = data.get("results", [])
@@ -71,7 +66,7 @@ async def get_comments(session, page_id, users_map):
         for t in rich_text:
             if t.get("type") == "text":
                 txt = t.get("text", {})
-                plain = html.escape(txt.get("content", ""))
+                plain = Config.html.escape(txt.get("content", ""))
                 link = txt.get("link")
                 href = link.get("url") if isinstance(link, dict) else None
                 if href:
@@ -84,14 +79,14 @@ async def get_comments(session, page_id, users_map):
                     linked_page_id = mention["page"]["id"]
                     title = await get_page_title(session, linked_page_id)
                     link = f"https://www.notion.so/{linked_page_id.replace('-', '')}"
-                    partes.append(f'<a href="{link}">{html.escape(title)}</a>')
+                    partes.append(f'<a href="{link}">{Config.html.escape(title)}</a>')
                 else:
-                    partes.append(html.escape(t.get("plain_text", "")))
+                    partes.append(Config.html.escape(t.get("plain_text", "")))
             elif t.get("type") == "link_preview":
                 url = t.get("href", "")
                 partes.append(f'<a href="{url}">🔗</a>' if url else "🔗")
             else:
-                partes.append(html.escape(t.get("plain_text", "")))
+                partes.append(Config.html.escape(t.get("plain_text", "")))
 
         contenido = "".join(partes).strip()
         if contenido:
@@ -99,8 +94,6 @@ async def get_comments(session, page_id, users_map):
 
     return comentarios_validos
 
-
-# --- OBTENER TODOS LOS COMENTARIOS VÁLIDOS ---
 async def get_all_comments(session, page_id, users_map):
     url = f"https://api.notion.com/v1/comments?block_id={page_id}"
     data = await fetch_json(session, url)
@@ -122,7 +115,7 @@ async def get_all_comments(session, page_id, users_map):
         for t in rich_text:
             if t.get("type") == "text":
                 txt = t.get("text", {})
-                plain = html.escape(txt.get("content", ""))
+                plain = Config.html.escape(txt.get("content", ""))
                 link = txt.get("link")
                 href = link.get("url") if isinstance(link, dict) else None
                 partes.append(f'<a href="{href}">{plain}</a>' if href else plain)
@@ -132,14 +125,14 @@ async def get_all_comments(session, page_id, users_map):
                     linked_page_id = mention["page"]["id"]
                     title = await get_page_title(session, linked_page_id)
                     link = f"https://www.notion.so/{linked_page_id.replace('-', '')}"
-                    partes.append(f'<a href="{link}">{html.escape(title)}</a>')
+                    partes.append(f'<a href="{link}">{Config.html.escape(title)}</a>')
                 else:
-                    partes.append(html.escape(t.get("plain_text", "")))
+                    partes.append(Config.html.escape(t.get("plain_text", "")))
             elif t.get("type") == "link_preview":
                 url = t.get("href", "")
                 partes.append(f'<a href="{url}">🔗</a>' if url else "🔗")
             else:
-                partes.append(html.escape(t.get("plain_text", "")))
+                partes.append(Config.html.escape(t.get("plain_text", "")))
 
         contenido = "".join(partes).strip()
         if contenido:
@@ -147,7 +140,6 @@ async def get_all_comments(session, page_id, users_map):
 
     return comentarios_validos
 
-# --- FUNCIONES AUXILIARES DE NOTION ---
 async def get_page_title(session, page_id):
     data = await fetch_json(session, f"https://api.notion.com/v1/pages/{page_id}")
     for prop in data.get("properties", {}).values():
@@ -176,14 +168,58 @@ async def get_page_date(session, page_id):
             return start[:10]
     return "Sin fecha"
 
-# --- SCRIPT PRINCIPAL ---
+
+# ==========================================
+# SERVICIO DE DOMINIO
+# ==========================================
+
+
+
+
+# ==========================================
+# TELEGRAM
+# ==========================================
+def telegram_escape(text: str) -> str:
+    return Config.html.escape(text or "")
+
+async def enviar_a_telegram(mensaje_html, equipo: str):
+    print(f"Enviando comentario a Telegram para {equipo}...")
+    bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
+    try:
+        thread_id = Config.THREAD_IDS.get(equipo)
+        if not thread_id:
+            print(f"⚠️ No se encontró thread_id para {equipo}, se enviará al chat principal.")
+            await bot.send_message(chat_id=Config.CHAT_ID, text=mensaje_html, parse_mode=Config.ParseMode.HTML)
+        else:
+            await bot.send_message(
+                chat_id=Config.CHAT_ID,
+                text=mensaje_html,
+                parse_mode=Config.ParseMode.HTML,
+                message_thread_id=thread_id
+            )
+    except Exception as e:
+        print("Error enviando mensaje a Telegram:", e)
+
+
+# ==========================================
+# CONVERSATION HANDLERS
+# ==========================================
+
+
+
+
+
+# ==========================================
+# LÓGICA DE ARMADO MENSAJES
+# ==========================================
+
 async def RDs_comments(concatenado: bool = True):
     mensajes = []
-    async with aiohttp.ClientSession() as session:
+    async with Config.aiohttp.ClientSession() as session:
         # Mapeo de usuarios
         users_map = await get_users_map(session)
 
-        fecha_hoy = (datetime.now() + timedelta(days=0)).strftime('%Y-%m-%d')
+        fecha_hoy = (Config.datetime.now() + Config.timedelta(days=0)).strftime('%Y-%m-%d')
         query = {"filter": {"property": "Date", "date": {"equals": fecha_hoy}}}
         data = await fetch_json(
             session,
@@ -256,5 +292,33 @@ async def RDs_comments(concatenado: bool = True):
             return "\n\n".join(mensajes) if mensajes else "⚠️ No se encontraron comentarios para ningún equipo."
         else:
             return "✅ Comentarios enviados a Telegram."
+
+
+
+# ============================
+# JOB MENSAJES RDS
+# ============================
+
+async def job_rd(context: Config.CallbackContext):
+    print("📤 job_rd disparado a las", Config.datetime.now(Config.ARG_TZ))
+    resultado = await RDs_comments(concatenado=False)
+    if resultado:
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_LOG,
+            text=str(resultado),
+            parse_mode="HTML"
+        )
+
+
+
+
+
+
+
+
+
+
+
+
 
 

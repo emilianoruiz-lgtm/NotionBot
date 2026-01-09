@@ -1,32 +1,182 @@
-import logging
-import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    CallbackContext, ConversationHandler, CallbackQueryHandler, MessageHandler, CommandHandler, filters
-)
-from datetime import time
-import Horarios
-import Config
-import re
-from modules.jobs import (
-    job_dayin, job_rd, job_burn,
-    job_newday, job_food, job_pay,job_agenda_semana_prox
-)
-from modules.Agenda import job_agenda_preliminar, job_agenda_automatica
-from modules.DayOUT import job_dayout
+# ==========================================
+# IMPORTS
+# ==========================================
 
-# Configura logging
-logging.basicConfig(
+# Módulos Locales
+import Config
+import Horarios
+from modules.Agenda import job_agenda_preliminar, job_agenda_automatica, job_agenda_preliminar_por_equipo
+from modules.DayOUT import job_dayout
+from modules.DayIN import job_dayin
+from modules.NewDay import job_newday
+from modules.Burn import job_burn
+from modules.mundopizza.menump import job_food, job_pay
+from modules.jobs import job_dayin
+from modules.RDs import job_rd
+from modules.Deploy import job_deploy
+
+# ==========================================
+# CONFIGURACIÓN Y CONSTANTES
+# ==========================================
+
+SET_TAREA, SET_HORA = range(2)
+
+MAP_TAREAS = {
+    "DayIN": "hora_dayin",
+    "Comentarios RD": "hora_rd",
+    "Burn1": "hora_burn1",
+    "Burn2": "hora_burn2",
+    "Burn3": "hora_burn3",
+    "Burn4": "hora_burn4",
+    "Agenda Pre": "hora_agenda_pre",
+    "Agenda": "hora_agenda",
+    "DayOUT": "hora_dayout",
+    "NewDay": "hora_newday",
+}
+
+
+# ==========================================
+# FETCH TXT
+# ==========================================
+
+
+
+
+# ==========================================
+# WRITE TXT
+# ==========================================
+
+async def setear_hora(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    """Recibe la hora, actualiza Horarios.py y reprograma el job"""
+    hora_str = update.message.text.strip()
+    if not Config.re.match(r"^\d{2}:\d{2}$", hora_str):
+        await update.message.reply_text("⚠️ Formato inválido. Usá HH:MM (ej: 08:45)")
+        return SET_HORA
+
+    hh, mm = map(int, hora_str.split(":"))
+    nueva_hora = Config.time(hour=hh, minute=mm, tzinfo=Config.ARG_TZ)
+    var_name = context.user_data["tarea_var"]
+
+    # === Actualizar Horarios.py ===
+    with open("Horarios.py", "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    with open("Horarios.py", "w", encoding="utf-8") as f:
+        for line in lines:
+            if line.strip().startswith(f"{var_name} = time("):
+                f.write(f"{var_name} = time(hour={hh}, minute={mm}, tzinfo=Config.ARG_TZ)\n")
+            else:
+                f.write(line)
+
+    setattr(Horarios, var_name, nueva_hora)
+
+    # Eliminar job viejo
+    jobs = context.job_queue.get_jobs_by_name(var_name)
+    for job in jobs:
+        job.schedule_removal()
+
+    # Reagendar job
+    job_map = {
+        "hora_dayin": job_dayin,
+        "hora_rd": job_rd,
+        "hora_burn1": job_burn,
+        "hora_burn2": job_burn,
+        "hora_burn3": job_burn,
+        "hora_burn4": job_burn,
+        "hora_agenda_pre": job_agenda_preliminar,
+        "hora_agenda": job_agenda_automatica,
+        "hora_dayout": job_dayout,
+        "hora_newday": job_newday,
+    }
+
+    job_func = job_map[var_name]
+
+    await update.message.reply_text(
+        f"✅ Horario de <b>{var_name}</b> actualizado a {hora_str}",
+        parse_mode=Config.ParseMode.HTML
+    )
+    return Config.ConversationHandler.END
+
+# ==========================================
+# SERVICIO DE DOMINIO
+# ==========================================
+
+
+
+
+# ==========================================
+# MENÚES TELEGRAM
+# ==========================================
+
+
+
+# ==========================================
+# CONVERSATION HANDLERS
+# ==========================================
+async def elegir_tarea(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    tarea = query.data
+    Config.logger.info(f"Tarea seleccionada: {tarea}")
+    if tarea not in TAREAS_MAP:
+        Config.logger.warning(f"Tarea inválida: {tarea}")
+        await query.message.edit_text(
+            "⚠️ Tarea inválida. Por favor, inicia de nuevo con /sethorario."
+        )
+        return Config.ConversationHandler.END
+    context.user_data["tarea"] = tarea
+    context.user_data["tarea_var"] = TAREAS_MAP[tarea]
+
+    await query.message.edit_text(
+        f"⏰ Elegiste <b>{tarea}</b>.\n\nIngresá la nueva hora en formato HH:MM (ej: 07:30)",
+        parse_mode="HTML"
+    )
+    return SET_HORA
+
+async def sethorario_start(update, context):
+    tareas = []
+    for nombre, var_name in MAP_TAREAS.items():
+        hora_actual = getattr(Horarios, var_name)
+        minutos = hora_actual.hour * 60 + hora_actual.minute
+        tareas.append((minutos, nombre, var_name, hora_actual))
+    tareas.sort(key=lambda x: x[0])
+    keyboard = [
+        [Config.InlineKeyboardButton(f"{nombre} ({hora_actual.strftime('%H:%M')})", callback_data=var_name)]
+        for _, nombre, var_name, hora_actual in tareas
+    ]
+    reply_markup = Config.InlineKeyboardMarkup(keyboard, row_width=1)
+    texto = "🕑 Seleccioná la tarea que querés modificar:"
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(texto, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(texto, reply_markup=reply_markup)
+    return SET_TAREA
+
+# ==========================================
+# MENÚ SET HORARIOS
+# ==========================================
+
+async def cancelar_sethorario(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Configuración cancelada.")
+    return Config.ConversationHandler.END
+
+
+
+
+
+# Configura Config.logging
+Config.logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=Config.logging.INFO
 )
-logger = logging.getLogger(__name__)
+logger = Config.logging.getLogger(__name__)
 
 # Silenciar logs de httpx y apscheduler
-logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('apscheduler.scheduler').setLevel(logging.WARNING)
-logging.getLogger('apscheduler').setLevel(logging.WARNING)
-logging.getLogger('telegram.ext').setLevel(logging.WARNING)
+Config.logging.getLogger('httpx').setLevel(Config.logging.WARNING)
+Config.logging.getLogger('apscheduler.scheduler').setLevel(Config.logging.WARNING)
+Config.logging.getLogger('apscheduler').setLevel(Config.logging.WARNING)
+Config.logging.getLogger('telegram.ext').setLevel(Config.logging.WARNING)
 
 # Estados del ConversationHandler
 SET_TAREA, SET_HORA = range(2)
@@ -39,6 +189,7 @@ TAREAS_MAP = {
     "Burn2": "hora_burn2",
     "Burn3": "hora_burn3",
     "Agenda Pre": "hora_agenda_pre",
+    "Agenda Pre EQ": "hora_agenda_pre_eq",
     "Agenda": "hora_agenda",
     "Agenda Semanal": "hora_agenda_sem",
     "Burn4": "hora_burn4",
@@ -46,6 +197,7 @@ TAREAS_MAP = {
     "NewDay": "hora_newday",
     "food": "hora_food",
     "pay": "hora_pay",
+    "deploy": "hora_deploy",
 }
 
 # Mapeo de variables a funciones de job
@@ -57,26 +209,27 @@ JOB_MAP = {
     "hora_burn3": job_burn,
     "hora_burn4": job_burn,
     "hora_agenda_pre": job_agenda_preliminar,
+    "hora_agenda_pre_eq": job_agenda_preliminar_por_equipo,
     "hora_agenda": job_agenda_automatica,
-    "hora_agenda": job_agenda_semana_prox,
     "hora_dayout": job_dayout,
     "hora_newday": job_newday,
     "hora_food": job_food,
     "hora_pay": job_pay,
+    "hora_deploy": job_deploy,
 }
 
-async def debug_callback(update: Update, context: CallbackContext):
+async def debug_callback(update: Config.Update, context: Config.CallbackContext):
     """Handler genérico para capturar todos los callbacks."""
     logger.info(f"Callback recibido: data='{update.callback_query.data}' de user_id={update.effective_user.id}")
     await update.callback_query.answer()
     await update.callback_query.message.reply_text(f"Callback recibido: {update.callback_query.data}. Procesando...")
 
-async def cancelar_sethorario(update: Update, context: CallbackContext):
+async def cancelar_sethorario(update: Config.Update, context: Config.CallbackContext):
     logger.info("Conversación cancelada por usuario")
     await update.message.reply_text("❌ Conversación cancelada.")
-    return ConversationHandler.END
+    return Config.ConversationHandler.END
 
-async def sethorario_start(update: Update, context: CallbackContext):
+async def sethorario_start(update: Config.Update, context: Config.CallbackContext):
     logger.info(f"Iniciando /sethorario para user_id: {update.effective_user.id}")
 
     # Construyo lista con (hora, nombre, var_name)
@@ -96,9 +249,9 @@ async def sethorario_start(update: Update, context: CallbackContext):
     keyboard = []
     for hora, nombre, var_name in tareas_con_hora:
         label = f"{nombre} ({hora.strftime('%H:%M')})"
-        keyboard.append([InlineKeyboardButton(label, callback_data=nombre)])
+        keyboard.append([Config.InlineKeyboardButton(label, callback_data=nombre)])
 
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = Config.InlineKeyboardMarkup(keyboard)
     texto = "⚙️ Seleccioná la tarea que querés modificar:"
 
     if update.callback_query:
@@ -110,9 +263,7 @@ async def sethorario_start(update: Update, context: CallbackContext):
     return SET_TAREA
 
 
-
-
-async def elegir_tarea(update: Update, context: CallbackContext):
+async def elegir_tarea(update: Config.Update, context: Config.CallbackContext):
     try:
         query = update.callback_query
         await query.answer()
@@ -123,7 +274,7 @@ async def elegir_tarea(update: Update, context: CallbackContext):
             await query.message.edit_text(
                 "⚠️ Tarea inválida. Por favor, inicia de nuevo con /sethorario."
             )
-            return ConversationHandler.END
+            return Config.ConversationHandler.END
 
         context.user_data["tarea"] = tarea
         context.user_data["tarea_var"] = TAREAS_MAP[tarea]
@@ -138,7 +289,7 @@ async def elegir_tarea(update: Update, context: CallbackContext):
         logger.error(f"Error en elegir_tarea: {e}", exc_info=True)
         await query.answer()
         await query.message.edit_text("⚠️ Error interno al procesar la selección. Intenta de nuevo.")
-        return ConversationHandler.END
+        return Config.ConversationHandler.END
 
 def persistir_horas():
     """Reescribe Horarios.py con los valores actuales."""
@@ -149,10 +300,10 @@ def persistir_horas():
     for _, var_name in TAREAS_MAP.items():
         try:
             t = getattr(Horarios, var_name)
-            if not isinstance(t, time):
+            if not isinstance(t, Config.time):
                 logger.error(f"Valor inválido para {var_name}: {t}")
                 continue
-            lines.append(f"{var_name} = time(hour={t.hour}, minute={t.minute}, tzinfo=Config.ARG_TZ)\n")
+            lines.append(f"{var_name} = time(hour={t.hour}, minute={t.minute}, tzinfo={Config.ARG_TZ})\n")
         except AttributeError as e:
             logger.error(f"Error al acceder a {var_name} en Horarios: {e}")
             continue
@@ -169,10 +320,10 @@ def persistir_horas():
         logger.error(f"Error al escribir Horarios.py: {e}", exc_info=True)
         raise
 
-async def setear_hora(update: Update, context: CallbackContext):
+async def setear_hora(update: Config.Update, context: Config.CallbackContext):
     """Recibe la hora, valida formato, actualiza Horarios.py y reprograma el job."""
     texto = update.message.text.strip()
-    hora_match = re.match(r'^(\d{1,2}):(\d{2})$', texto)
+    hora_match = Config.re.match(r'^(\d{1,2}):(\d{2})$', texto)
     if not hora_match:
         logger.warning("Formato de hora inválido")
         await update.message.reply_text(
@@ -189,7 +340,7 @@ async def setear_hora(update: Update, context: CallbackContext):
         return SET_HORA
 
     try:
-        nueva_hora = time(hour=h, minute=m, tzinfo=Config.ARG_TZ)
+        nueva_hora = Config.time(hour=h, minute=m, tzinfo=Config.ARG_TZ)
         tarea = context.user_data.get("tarea")
         var_name = context.user_data.get("tarea_var")
 
@@ -198,7 +349,7 @@ async def setear_hora(update: Update, context: CallbackContext):
             await update.message.reply_text(
                 "⚠️ Error interno: no se encontró la tarea seleccionada. Inicia de nuevo."
             )
-            return ConversationHandler.END
+            return Config.ConversationHandler.END
 
         # Actualizar en memoria
         setattr(Horarios, var_name, nueva_hora)
@@ -226,14 +377,14 @@ async def setear_hora(update: Update, context: CallbackContext):
             parse_mode="HTML"
         )
         logger.info("Actualización completada")
-        return ConversationHandler.END
+        return Config.ConversationHandler.END
     except Exception as e:
         logger.error(f"Error en setear_hora: {e}", exc_info=True)
         await update.message.reply_text("⚠️ Error interno al guardar la hora. Intenta de nuevo.")
-        return ConversationHandler.END
+        return Config.ConversationHandler.END
 
 async def schedule_daily_job(
-    app, job_func, job_time: time, days=(0, 1, 2, 3, 4), job_name="Job"
+    app, job_func, job_time: Config.time, days=(0, 1, 2, 3, 4), job_name="Job"
 ):
     """Programa un job diario en el JobQueue."""
     if getattr(job_time, "tzinfo", None) is None:
@@ -256,12 +407,12 @@ async def schedule_daily_job(
     except Exception as e:
         logger.error(f"Error al programar job '{job_name}': {e}")
 
-conv_sethorario = ConversationHandler(
-    entry_points=[CommandHandler("sethorario", sethorario_start)],
+conv_sethorario = Config.ConversationHandler(
+    entry_points=[Config.CommandHandler("sethorario", sethorario_start)],
     states={
-        SET_TAREA: [CallbackQueryHandler(elegir_tarea, pattern=f"^({'|'.join(TAREAS_MAP.keys())})$")],
-        SET_HORA: [MessageHandler(filters.TEXT & ~filters.COMMAND, setear_hora)],
+        SET_TAREA: [Config.CallbackQueryHandler(elegir_tarea, pattern=f"^({'|'.join(TAREAS_MAP.keys())})$")],
+        SET_HORA: [Config.MessageHandler(Config.filters.TEXT & ~Config.filters.COMMAND, setear_hora)],
     },
-    fallbacks=[CommandHandler("cancelar", cancelar_sethorario)],
+    fallbacks=[Config.CommandHandler("cancelar", cancelar_sethorario)],
     map_to_parent={}
 )

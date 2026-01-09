@@ -1,57 +1,118 @@
-import asyncio
-import aiohttp
-from datetime import datetime, timedelta, date
-from telegram import Bot
-from telegram.constants import ParseMode
-import html
-import os
-from openai import OpenAI
-import random
+# ==========================================
+# IMPORTS
+# ==========================================
 
-# --- CONFIGURACIONES ---
+# Módulos Locales
 import Config
 
 
-# --- FUNCIONES EXTRA ---
-def dias_habiles(inicio: date, fin: date) -> int:
-    """
-    Calcula días hábiles entre 'inicio' y 'fin' (inclusive de 'inicio', excluye 'fin'),
-    sin contar fines de semana ni feriados.
-    """
+# ==========================================
+# CONFIGURACIÓN Y CONSTANTES
+# ==========================================
+
+ESPERANDO_EQUIPO_DAYIN = 100
+
+
+# ==========================================
+# UTILIDADES DE SISTEMA Y TIEMPO
+# ==========================================
+
+def dias_habiles(inicio: Config.date, fin: Config.date) -> int:
     dias = 0
     actual = inicio
     while actual < fin:
         if actual.weekday() < 5 and actual not in Config.FERIADOS:  # lunes=0, viernes=4
             dias += 1
-        actual += timedelta(days=1)
+        actual += Config.timedelta(days=1)
     return dias
 
-# --- FUNCIONES TELEGRAM ---
-def telegram_escape(text: str) -> str:
-    return html.escape(text or "")
 
-async def enviar_a_telegram(mensaje_html, equipo: str):
-    if not mensaje_html or not mensaje_html.strip():
-        print(f"⚠️ Mensaje vacío para {equipo}, no se envía a Telegram.")
-        return
-    
-    print(f"Enviando comentario a Telegram para {equipo}...")
-    bot = Bot(token=Config.TELEGRAM_TOKEN)
-    try:
-        thread_id = Config.THREAD_IDS.get(equipo)
-        if not thread_id:
-            await bot.send_message(chat_id=Config.CHAT_ID, text=mensaje_html, parse_mode=ParseMode.HTML)
-        else:
-            await bot.send_message(
-                chat_id=Config.CHAT_ID,
-                text=mensaje_html,
-                parse_mode=ParseMode.HTML,
-                message_thread_id=thread_id
-            )
-    except Exception as e:
-        print("Error enviando mensaje a Telegram:", e)
 
-# --- FUNCIONES NOTION ---
+# ==========================================
+# HELPERS DEL DOMINIO
+# ==========================================
+
+async def verificar_responsables(session, registro, relaciones_pl): 
+    if EQUIPO_OBJETIVO == "Caimanes":
+        PERSONAS_OBJETIVO = Config.PERSONAS_CAIMANES
+    if EQUIPO_OBJETIVO == "Huemules":
+        PERSONAS_OBJETIVO = Config.PERSONAS_HUEMULES
+    if EQUIPO_OBJETIVO == "Zorros":
+        PERSONAS_OBJETIVO = Config.PERSONAS_ZORROS
+
+    asignados = {p: False for p in PERSONAS_OBJETIVO}
+    tareas_next_to_do = []
+
+    for rel in relaciones_pl:
+        pl_id = rel.get('id')
+        if not pl_id:
+            continue
+
+        registros_plan = await get_registros_plan_por_pl(session, pl_id)
+        for plan in registros_plan:
+            props = plan.get("properties", {})
+            
+            for field in Config.TASK_FIELDS:
+                field_prop = props.get(field)
+                if field_prop and field_prop.get("type") == "relation":
+                    ids_rel = [r.get("id") for r in field_prop.get("relation", [])]
+
+                    for task_id in ids_rel:
+                        data_task = await fetch_json(session, f"https://api.notion.com/v1/pages/{task_id}")
+                        status_prop = data_task.get("properties", {}).get("Status Task")
+                        status_name = ""
+                        if status_prop and status_prop.get("type") == "status":
+                            status_info = status_prop.get("status")
+                            if status_info:
+                                status_name = status_info.get("name", "")
+
+                        responsables = await get_task_responsable(data_task)
+
+                        if status_name == "In progress":
+                            for p in PERSONAS_OBJETIVO:
+                                if p in responsables:
+                                    asignados[p] = True
+
+                        if status_name == "Next to do":
+                            titulo_task = await get_page_title(session, task_id)
+                            tareas_next_to_do.append(titulo_task)
+
+    sin_asignar = [p for p, ok in asignados.items() if not ok]
+
+    comentario2_plain = f"\n📋 Asignación de tareas {EQUIPO_OBJETIVO}:\n----------------------------------------------------\n"
+    comentario2_html = f"\n📋 Asignación de tareas {EQUIPO_OBJETIVO}:\n----------------------------------------------------\n"
+
+    if sin_asignar:
+        comentario2_plain += "  ⚠️ Responsables sin tareas en progreso:\n"
+        comentario2_html += "  ⚠️ Responsables sin tareas en progreso:\n"
+        for p in sin_asignar:
+            comentario2_plain += f"    👤 {p}\n"
+            comentario2_html += f"    👤 {telegram_escape(p)}\n"
+
+        if tareas_next_to_do:
+            comentario2_plain += "\n  Posibles tareas para tomar:\n"
+            comentario2_html += "\n  Posibles tareas para tomar:\n"
+            for t in tareas_next_to_do:
+                comentario2_plain += f"   ⏹ {t}\n"
+                comentario2_html += f"   ⏹ {telegram_escape(t)}\n"
+    else:
+        comentario2_plain += "✅ Todos los responsables tienen al menos una tarea en progreso.\n"
+        comentario2_html += "✅ Todos los responsables tienen al menos una tarea en progreso.\n"
+
+    return comentario2_plain, comentario2_html
+
+async def dayin(update: Config.Update, context: Config.CallbackContext):
+    resultado = await DayIN()
+    await update.message.reply_text(
+        resultado,
+        parse_mode=Config.ParseMode.HTML,
+    )
+
+
+# ==========================================
+# FETCH NOTION
+# ==========================================
+
 async def fetch_json(session, url, method="GET", payload=None): #NUEVA CONSULTA A NOTION
     if method == "POST":
         async with session.post(url, headers=Config.HEADERS, json=payload) as resp:
@@ -59,16 +120,6 @@ async def fetch_json(session, url, method="GET", payload=None): #NUEVA CONSULTA 
     else:
         async with session.get(url, headers=Config.HEADERS) as resp:
             return await resp.json()
-
-async def post_comment(session, page_id, comentario):#POST COMENTARIO EN NOTION
-    payload = {
-        "parent": {"page_id": page_id},
-        "object": "comment",
-        "rich_text": [{"type": "text", "text": {"content": comentario}}]
-    }
-    url = "https://api.notion.com/v1/comments"
-    async with session.post(url, headers=Config.HEADERS, json=payload) as resp:
-        return await resp.json()
 
 async def get_page_title(session, page_id): #OBTIENE NOMBRE DE LA TARJETA
     data = await fetch_json(session, f"https://api.notion.com/v1/pages/{page_id}")
@@ -79,7 +130,6 @@ async def get_page_title(session, page_id): #OBTIENE NOMBRE DE LA TARJETA
                 return title_list[0].get("plain_text", "Sin nombre")
     return "Sin nombre"
 
-    print("Publicando comentario en Notion...")
 async def get_page_equipo(session, page_id): #OBTIENE EQUIPO DE LA EPICA
     data = await fetch_json(session, f"https://api.notion.com/v1/pages/{page_id}")
     equipo_prop = data.get("properties", {}).get("Equipo")
@@ -93,7 +143,7 @@ async def get_page_date_start(session, page_id): #OBTIENE FECHA DE INICIO DE LA 
     if date_prop and date_prop.get("type") == "date":
         date_val = date_prop.get("date")
         if date_val and date_val.get("start"):
-            return datetime.fromisoformat(date_val["start"][:10]).date()
+            return Config.datetime.fromisoformat(date_val["start"][:10]).date()
     return None
 
 async def get_page_formula(session, page_id, formula_name="%"): #OBTIENE % DE LA ÉPICA
@@ -201,90 +251,174 @@ async def get_tasks_from_plan(session, plan): #OBTIENE TAREAS DE LA ÉPICA
     if not tasks_ids:
         return ["- Sin TASK"], ["- Sin TASK"]
 
-    results = await asyncio.gather(*(fetch_task(tid) for tid in tasks_ids))
+    results = await Config.asyncio.gather(*(fetch_task(tid) for tid in tasks_ids))
     lines_plain, lines_html = zip(*results)
     return list(lines_plain), list(lines_html)
 
-async def verificar_responsables(session, registro, relaciones_pl): #REVISA QUE TODOS TENGAN UNA TASK ASIGNADA
-    if EQUIPO_OBJETIVO == "Caimanes":
-        PERSONAS_OBJETIVO = Config.PERSONAS_CAIMANES
-    if EQUIPO_OBJETIVO == "Huemules":
-        PERSONAS_OBJETIVO = Config.PERSONAS_HUEMULES
-    if EQUIPO_OBJETIVO == "Zorros":
-        PERSONAS_OBJETIVO = Config.PERSONAS_ZORROS
 
-    asignados = {p: False for p in PERSONAS_OBJETIVO}
-    tareas_next_to_do = []
 
-    for rel in relaciones_pl:
-        pl_id = rel.get('id')
-        if not pl_id:
-            continue
+# ==========================================
+# WRITE NOTION
+# ==========================================
 
-        registros_plan = await get_registros_plan_por_pl(session, pl_id)
-        for plan in registros_plan:
-            props = plan.get("properties", {})
-            
-            for field in Config.TASK_FIELDS:
-                field_prop = props.get(field)
-                if field_prop and field_prop.get("type") == "relation":
-                    ids_rel = [r.get("id") for r in field_prop.get("relation", [])]
+async def post_comment(session, page_id, comentario):#POST COMENTARIO EN NOTION
+    payload = {
+        "parent": {"page_id": page_id},
+        "object": "comment",
+        "rich_text": [{"type": "text", "text": {"content": comentario}}]
+    }
+    url = "https://api.notion.com/v1/comments"
+    async with session.post(url, headers=Config.HEADERS, json=payload) as resp:
+        return await resp.json()
 
-                    for task_id in ids_rel:
-                        data_task = await fetch_json(session, f"https://api.notion.com/v1/pages/{task_id}")
-                        status_prop = data_task.get("properties", {}).get("Status Task")
-                        status_name = ""
-                        if status_prop and status_prop.get("type") == "status":
-                            status_info = status_prop.get("status")
-                            if status_info:
-                                status_name = status_info.get("name", "")
 
-                        responsables = await get_task_responsable(data_task)
 
-                        if status_name == "In progress":
-                            for p in PERSONAS_OBJETIVO:
-                                if p in responsables:
-                                    asignados[p] = True
 
-                        if status_name == "Next to do":
-                            titulo_task = await get_page_title(session, task_id)
-                            tareas_next_to_do.append(titulo_task)
+# ==========================================
+# SERVICIO DE DOMINIO
+# ==========================================
 
-    sin_asignar = [p for p, ok in asignados.items() if not ok]
+async def DayIN():
+    equipos = ["Caimanes", "Zorros", "Huemules"]
+    for equipo in equipos:
+        try:
+            await DayInEquipo(equipo)
+        except Exception as e:
+            print(f"❌ Error procesando {equipo}: {e}")
 
-    comentario2_plain = f"\n📋 Asignación de tareas {EQUIPO_OBJETIVO}:\n----------------------------------------------------\n"
-    comentario2_html = f"\n📋 Asignación de tareas {EQUIPO_OBJETIVO}:\n----------------------------------------------------\n"
 
-    if sin_asignar:
-        comentario2_plain += "  ⚠️ Responsables sin tareas en progreso:\n"
-        comentario2_html += "  ⚠️ Responsables sin tareas en progreso:\n"
-        for p in sin_asignar:
-            comentario2_plain += f"    👤 {p}\n"
-            comentario2_html += f"    👤 {telegram_escape(p)}\n"
+# ==========================================
+# MENÚES TELEGRAM
+# ==========================================
+def create_team_keyboard(include_todos=False, botones_por_fila=3):
+    keyboard = []
+    fila_actual = []
 
-        if tareas_next_to_do:
-            comentario2_plain += "\n  Posibles tareas para tomar:\n"
-            comentario2_html += "\n  Posibles tareas para tomar:\n"
-            for t in tareas_next_to_do:
-                comentario2_plain += f"   ⏹ {t}\n"
-                comentario2_html += f"   ⏹ {telegram_escape(t)}\n"
+    for team_key, team_data in Config.EQUIPOS_CONFIG.items():
+        if team_key == "General":
+            continue  # Omitir "General"
+        if team_key == "Admin":
+            continue  # Omitir "Admin"
+        texto = f"{team_data.get('emoji', '')} {team_data.get('display_name', team_key)}".strip()
+
+        fila_actual.append(
+            Config.InlineKeyboardButton(
+                texto,
+                callback_data=f"team_{team_key}"
+            )
+        )
+
+        if len(fila_actual) == botones_por_fila:
+            keyboard.append(fila_actual)
+            fila_actual = []
+
+    # Agregar última fila si quedó incompleta
+    if fila_actual:
+        keyboard.append(fila_actual)
+
+    if include_todos:
+        keyboard.append([
+            Config.InlineKeyboardButton("Todos", callback_data="team_Todos")
+        ])
+
+    keyboard.append([
+        Config.InlineKeyboardButton("Cancelar", callback_data="team_Cancelar")
+    ])
+
+    return Config.InlineKeyboardMarkup(keyboard)
+
+def telegram_escape(text: str) -> str:
+    return Config.html.escape(text or "")
+
+async def enviar_a_telegram(mensaje_html, equipo: str):
+    if not mensaje_html or not mensaje_html.strip():
+        print(f"⚠️ Mensaje vacío para {equipo}, no se envía a Telegram.")
+        return
+    
+    print(f"Enviando comentario a Telegram para {equipo}...")
+    bot = Config.Bot(token=Config.TELEGRAM_TOKEN)
+    try:
+        thread_id = Config.THREAD_IDS.get(equipo)
+        if not thread_id:
+            await bot.send_message(chat_id=Config.CHAT_ID, text=mensaje_html, parse_mode=Config.ParseMode.HTML)
+        else:
+            await bot.send_message(
+                chat_id=Config.CHAT_ID,
+                text=mensaje_html,
+                parse_mode=Config.ParseMode.HTML,
+                message_thread_id=thread_id
+            )
+    except Exception as e:
+        print("Error enviando mensaje a Telegram:", e)
+
+# ==========================================
+# CONVERSATION HANDLERS
+# ==========================================
+
+async def start_dayin(update: Config.Update, context: Config.CallbackContext):
+    await update.message.reply_text(
+        "📋 DayIN:",
+        reply_markup=create_team_keyboard(include_todos=True),
+    )
+    return ESPERANDO_EQUIPO_DAYIN
+
+async def recibir_equipo_dayin(update: Config.Update, context: Config.CallbackContext):
+    query = update.callback_query
+    await query.answer()
+
+    equipo = query.data.replace("team_", "")
+
+    if equipo == "Cancelar":
+        await query.message.reply_text("❌ Operación cancelada.")
+        return Config.ConversationHandler.END
+
+    if equipo == "Todos":
+        await query.message.reply_text("⚡ Ejecutando DayIN de todos los equipos...")
+        for eq in Config.EQUIPOS:
+            await DayInEquipo(eq)
+        await query.message.reply_text(
+            "✔️ DayIN de TODOS los equipos publicado en Notion"
+        )
     else:
-        comentario2_plain += "✅ Todos los responsables tienen al menos una tarea en progreso.\n"
-        comentario2_html += "✅ Todos los responsables tienen al menos una tarea en progreso.\n"
+        await query.message.reply_text(f"⚡ Ejecutando DayIN de {equipo}...")
+        await DayInEquipo(equipo)
+        await query.message.reply_text(
+            f"✔️ DayIN de {equipo} publicado en Notion"
+        )
 
-    return comentario2_plain, comentario2_html
+    return Config.ConversationHandler.END
+
+async def cancelar(update: Config.Update, context: Config.CallbackContext):
+    if update.message:
+        await update.message.reply_text("❌ Conversación cancelada.")
+    elif update.callback_query:
+        await update.callback_query.message.reply_text("❌ Conversación cancelada.")
+    return Config.ConversationHandler.END
+
+conv_dayin = Config.ConversationHandler(
+    entry_points=[Config.CommandHandler("dayin", start_dayin)],
+    states={
+        ESPERANDO_EQUIPO_DAYIN: [
+            Config.CallbackQueryHandler(recibir_equipo_dayin, pattern="^team_")
+        ]
+    },
+    fallbacks=[Config.CommandHandler("cancelar", cancelar)],
+)
 
 
-# --- SCRIPT PRINCIPAL ---
+# ==========================================
+# LÓGICA DAYIN
+# ==========================================
+
 async def DayInEquipo(equipo: str):
     global EQUIPO_OBJETIVO
     EQUIPO_OBJETIVO = equipo
     print(f"\n================ Procesando equipo: {EQUIPO_OBJETIVO} ================\n")
 
-    async with aiohttp.ClientSession() as session:
+    async with Config.aiohttp.ClientSession() as session:
 
         # BUSCA REGISTROS DE BURNDOWN CORRESPONDIENTES A LA FECHA CONFIGURADA -> registros[]
-        fecha_maniana = (datetime.now() + timedelta(days=0)).strftime('%Y-%m-%d')
+        fecha_maniana = (Config.datetime.now() + Config.timedelta(days=0)).strftime('%Y-%m-%d')
         query = {"filter": {"property": "Date", "date": {"equals": fecha_maniana}}}
         data = await fetch_json(session, f"https://api.notion.com/v1/databases/{Config.DATABASE_ID}/query", method="POST", payload=query)
         registros = data.get('results', [])
@@ -400,7 +534,7 @@ async def DayInEquipo(equipo: str):
 
                                                 start_date = await get_page_date_start(session, task_id)
                                                 if start_date:
-                                                    dias = dias_habiles(start_date, datetime.now().date())
+                                                    dias = dias_habiles(start_date, Config.datetime.now().date())
                                                 else:
                                                     dias = 0
 
@@ -430,7 +564,7 @@ async def DayInEquipo(equipo: str):
                         comentario3_plain += f"    • {title} empezando esta tarea de {fibs_val} FIBs)\n"
                         comentario3_html += f"    • {telegram_escape(title)} (llevando {dias} días de trabajo en esta tarea de {fibs_val} FIBs)\n"                  
                     else:
-                        frase_random = random.choice(Config.FRASES_VARIADAS)
+                        frase_random = Config.random.choice(Config.FRASES_VARIADAS)
                         comentario3_plain += f"    • {title} (llevando {dias} días de trabajo en esta tarea de {fibs_val} FIBs)\n      {frase_random}\n"
                         comentario3_html += f"    • {telegram_escape(title)} (llevando {dias} días de trabajo en esta tarea de {fibs_val} FIBs)\n      {telegram_escape(frase_random)}\n"
 
@@ -472,13 +606,18 @@ async def DayInEquipo(equipo: str):
             if not relaciones_pl:
                 continue
 
-
-
-async def DayIN():
-    equipos = ["Caimanes", "Zorros", "Huemules"]
-    for equipo in equipos:
-        try:
-            await DayInEquipo(equipo)
-        except Exception as e:
-            print(f"❌ Error procesando {equipo}: {e}")
-
+# ============================
+# JOB DAYIN
+# ============================
+async def job_dayin(context: Config.CallbackContext):
+    print("📤 job_dayin disparado a las", Config.datetime.now(Config.ARG_TZ))
+    try:
+        resultado = await DayIN()
+        await context.bot.send_message(
+            chat_id=Config.CHAT_ID_LOG,
+            text=f"[DayIN automático realizado]\n{resultado}",
+            parse_mode="HTML"
+        )
+        print("📤 DayIN automático enviado")
+    except Exception as e:
+        print(f"❌ Error en job_dayin: {e}")
