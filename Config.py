@@ -130,37 +130,37 @@ EQUIPOS_CONFIG= {
         "emoji": "",
         "display_name": "Huemules",
         "integrantes": ["Luciano Crovetto", "Baltasar Ollé"],
-        "chat_id": '-1003646101971' # AS
+        "chat_id": '' # AS
     },
     "Zorros": {
         "emoji": "",
         "display_name": "Zorros",
         "integrantes": ["Federico Accurso", "Lisandro Luna"],
-        "chat_id":'-1003621275522' # BT
+        "chat_id":'' # BT
     },
     "Caimanes": {
         "emoji": "",
         "display_name": "Caimanes",
         "integrantes": ["Ian Reyes", "Marcos Casas"],
-        "chat_id": '-1003521233319' # DF
+        "chat_id": '' # DF
     },
     "Alpha Squad": {
         "emoji": "",
         "display_name": "Alpha Squad",
         "integrantes": ["Baltasar Ollé", "Lisandro Luna"],
-        "chat_id": '' # AS
+        "chat_id": '-1003646101971' # AS
     },
     "Bravo Team": {
         "emoji": "",
         "display_name": "Bravo Team",
         "integrantes": ["Luciano Crovetto", "Marcos Casas"],
-        "chat_id": '' # BT
+        "chat_id": '-1003621275522' # BT
     },
     "Delta Force": {
         "emoji": "",
         "display_name": "Delta Force",
         "integrantes": ["Federico Accurso", "Ian Reyes"],
-        "chat_id": '' # DF
+        "chat_id": '-1003521233319' # DF
     },
 
 }

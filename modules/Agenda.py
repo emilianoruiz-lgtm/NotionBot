@@ -322,19 +322,22 @@ def generar_agenda_por_fecha(fecha):
 def create_agenda_keyboard():
     keyboard = [
         [
-            Config.InlineKeyboardButton("📅 -2 días", callback_data="agenda_antesayer"),
+            Config.InlineKeyboardButton("📅 -2 días", callback_data="agenda_#-2"),
         ],
         [
-            Config.InlineKeyboardButton("📅 -1 día", callback_data="agenda_ayer"),
+            Config.InlineKeyboardButton("📅 -1 día", callback_data="agenda_#-1"),
         ],
         [
-            Config.InlineKeyboardButton("📅 <Hoy>", callback_data="agenda_hoy"),
+            Config.InlineKeyboardButton("📅 <Hoy>", callback_data="agenda_#0"),
         ],
         [
-            Config.InlineKeyboardButton("📅 +1 día", callback_data="agenda_manana"),
+            Config.InlineKeyboardButton("📅 +1 día", callback_data="agenda_#+1"),
         ],
         [
-            Config.InlineKeyboardButton("📅 +2 días", callback_data="agenda_pasadomanana"),
+            Config.InlineKeyboardButton("📅 +2 días", callback_data="agenda_#+2"),
+        ],
+                [
+            Config.InlineKeyboardButton("📅 +3 días", callback_data="agenda_#+3"),
         ],
         [
             Config.InlineKeyboardButton("Cancelar", callback_data="agenda_cancelar"),
@@ -383,17 +386,18 @@ async def recibir_fecha_agenda(update: Config.Update, context: Config.CallbackCo
 
     hoy = Config.date.today()
 
-    if data == "agenda_antesayer":
+    if data == "agenda_#-2":
         fecha = hoy - Config.timedelta(days=2)
-    elif data == "agenda_ayer":
+    elif data == "agenda_#-1":
         fecha = hoy - Config.timedelta(days=1)
-    elif data == "agenda_hoy":
+    elif data == "agenda_#0":
         fecha = hoy
-    elif data == "agenda_manana":
+    elif data == "agenda_#+1":
         fecha = hoy + Config.timedelta(days=1)
-    elif data == "agenda_pasadomanana":
+    elif data == "agenda_#+2":
         fecha = hoy + Config.timedelta(days=2)
-        titulo = "PASADO MAÑANA"
+    elif data == "agenda_#+3":
+        fecha = hoy + Config.timedelta(days=3)
     else:
         await query.message.reply_text("⚠️ Opción inválida.")
         return Config.ConversationHandler.END
@@ -413,7 +417,9 @@ conv_agenda = Config.ConversationHandler(
     states={
         ESPERANDO_FECHA_AGENDA: [
             Config.CallbackQueryHandler(
-                recibir_fecha_agenda, pattern="^agenda_(antesayer|ayer|hoy|manana|pasadomanana|cancelar)$"
+                recibir_fecha_agenda, pattern=r"^agenda_(\#-2|\#-1|\#0|\#\+1|\#\+2|\#\+3|cancelar)$"
+
+
 
             )
         ]

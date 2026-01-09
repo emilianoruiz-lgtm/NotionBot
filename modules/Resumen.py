@@ -260,9 +260,8 @@ def render_resumen_html(equipos):
         if not lineas:
             continue
 
-        emoji = Config.EMOJIS.get(equipo, "📋")
         bloques.append(
-            f"{emoji} <b>{equipo}</b>\n"
+            f"<b>{equipo}</b>\n"
             f"------------------------------------------------\n"
             + "\n".join(lineas)
         )

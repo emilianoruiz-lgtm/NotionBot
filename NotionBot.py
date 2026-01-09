@@ -19,12 +19,11 @@ from modules.sethorario import conv_sethorario
 from modules.jobs import job_dayin
 from modules.RDs import job_rd
 from modules.Deploy import job_deploy, deploy_handler
+from modules.Launch import launch_equipo, elegir_equipo
 from modules.jobs import schedule_daily_job, debug_jobs, clear_jobs, job_restart
-from modules.Utilities import conv_notion_id, conv_props, notion_users_start
-from modules.handlers import (
-    wrap_handler, confirmar_handler, generic_message
-)
-
+from modules.Utilities import conv_notion_id, conv_props, notion_users_start, message_teams
+from modules.handlers import (wrap_handler, confirmar_handler, generic_message)
+from modules.Calendar import deploy_calendar_handler
 
 # ==========================================
 # 2. CONFIGURACIÓN Y CONSTANTES
@@ -196,7 +195,14 @@ async def manejar_pdf(update: Config.Update, context: Config.ContextTypes.DEFAUL
 
 async def curva_parcial(update, context):
     await update.message.reply_text("📈 Generando curvas...")
-    buf = await generar_curva_parcial()
+    try:
+        buf = await generar_curva_parcial()
+    except ValueError as e:
+        await update.message.reply_text(f"⚠️ {e}")
+        return
+    except Exception as e:
+        await update.message.reply_text("❌ Error inesperado generando curva")
+        raise
     await context.bot.send_photo(update.effective_chat.id, photo=Config.InputFile(buf, "curva.png"), caption="📊 Burndown actual")
 
 async def curva_parcial_huemul(update: Config.Update, context: Config.ContextTypes.DEFAULT_TYPE):
@@ -311,8 +317,11 @@ if __name__ == "__main__":
     app.add_handler(Config.CommandHandler("ChatID", chatid))
     app.add_handler(Config.CommandHandler("ping", ping))
     app.add_handler(Config.CommandHandler("epic", resumen))
-    app.add_handler(Config.CommandHandler("notion_users", notion_users_start)
-)
+    app.add_handler(Config.CommandHandler("notion_users", notion_users_start))
+    app.add_handler(    Config.CommandHandler("launch_equipo", elegir_equipo))
+    app.add_handler(Config.CommandHandler("notificar_eq", message_teams))
+    app.add_handler(Config.CallbackQueryHandler(launch_equipo,pattern=r"^launch_equipo:"))
+    app.add_handler(Config.CommandHandler("calendar", deploy_calendar_handler))
 
     # Comandos cortos, con Wrap propio
     app.add_handler(Config.CommandHandler("curvas", curva_parcial))
@@ -355,6 +364,7 @@ if __name__ == "__main__":
 
         # Caso general: todos los jobs que sí deben correr de lunes a viernes
         schedule_daily_job(app, job_func, job_time, days=(0, 1, 2, 3, 4), job_name=job_name)
+
 
     jobs = app.job_queue.jobs
 

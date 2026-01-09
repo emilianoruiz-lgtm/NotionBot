@@ -6,7 +6,13 @@ import requests
 import Config
 
 FERIADOS_API_URL = "https://api.argentinadatos.com/v1/feriados"
-
+EQUIPOS_OMITIDOS = {
+    "Caimanes",
+    "Huemules",
+    "Zorros",
+    "General",
+    "Admin"
+}
 
 # --- Función auxiliar para obtener feriados ---
 async def fetch_feriados(año: int) -> set[date]:
@@ -142,8 +148,6 @@ async def generar_curva_parcial():
     for a in años:
         feriados_todos |= await fetch_feriados(a)
 
-    equipos = ["Caimanes", "Huemules", "Zorros"]
-
     # --- ESTILO MODERNO ---
     plt.style.use("seaborn-v0_8-darkgrid")  # fondo moderno
     fig, axes = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
@@ -177,7 +181,9 @@ async def generar_curva_parcial():
     fechas_global = None
 
     # --- Graficar por equipo ---
-    for ax, equipo in zip(axes, equipos):
+    for ax, equipo in zip(axes, Config.EQUIPOS_CONFIG):
+        if equipo in EQUIPOS_OMITIDOS:
+            continue
         datos_equipo = [
             d for d in datos
             if d.get("Equipo", "").strip().lower() == equipo.lower()
@@ -314,6 +320,9 @@ async def generar_curva_parcial():
             elif grooming_day and f_date == grooming_day:
                 etiqueta += "\nGrooming"
             etiquetas.append(etiqueta)
+
+    if not fechas_global:
+        raise ValueError("No hay fechas hábiles para graficar en ningún equipo.")
 
     axes[-1].set_xticks(range(len(fechas_global)))
     axes[-1].set_xticklabels(etiquetas, rotation=45, ha='right', color="white", fontsize=9)

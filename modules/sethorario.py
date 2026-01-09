@@ -296,14 +296,14 @@ def persistir_horas():
     import inspect
 
     horarios_path = inspect.getfile(Horarios)  # ruta real del módulo Horarios
-    lines = ["from datetime import time\nimport Config\n\n"]
+    lines = ["from datetime import time\n\n"]
     for _, var_name in TAREAS_MAP.items():
         try:
             t = getattr(Horarios, var_name)
             if not isinstance(t, Config.time):
                 logger.error(f"Valor inválido para {var_name}: {t}")
                 continue
-            lines.append(f"{var_name} = time(hour={t.hour}, minute={t.minute}, tzinfo={Config.ARG_TZ})\n")
+            lines.append(f"{var_name} = time(hour={t.hour}, minute={t.minute})\n")
         except AttributeError as e:
             logger.error(f"Error al acceder a {var_name} en Horarios: {e}")
             continue

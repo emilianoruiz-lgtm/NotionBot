@@ -16,6 +16,14 @@ MODE_TEST = "test"
 SEP_HTML  = "━━━━━━━━━━━━━━━━━━━━"
 SEP_TEXT = "----------------------------------------"
 
+EQUIPOS_OMITIDOS = {
+    "Caimanes",
+    "Huemules",
+    "Zorros",
+    "General",
+    "Admin"
+}
+
 # ==========================================
 # UTILIDADES DE SISTEMA Y TIEMPO
 # ==========================================
@@ -46,7 +54,7 @@ async def enviar_a_telegram(mensaje_html, equipo: str):
         thread_id = Config.THREAD_IDS.get(equipo)
         if not thread_id:
             print(f"⚠️ No se encontró thread_id para {equipo}, se enviará al chat principal.")
-            await bot.send_message(chat_id=Config.CHAT_ID, text=mensaje_html, parse_mode=Config.ParseMode.HTML)
+            await bot.send_message(chat_id=Config.CHAT_ID, text=mensaje_html, parse_mode=Config.ParseMode.HTML,disable_web_page_preview=True)
         else:
             await bot.send_message(
             chat_id=Config.CHAT_ID,
@@ -76,6 +84,8 @@ async def dayout_procesar(session, equipos: list[str]) -> list[str]:
     """Procesa una lista de equipos y devuelve un log con el estado."""
     resultados = []
     for equipo in equipos:
+        if equipo in EQUIPOS_OMITIDOS:
+                continue
         try:
             await dayout_equipo(session, equipo)
             resultados.append(f"✅ {equipo} procesado")
@@ -425,10 +435,8 @@ def create_team_keyboard(include_todos=False, botones_por_fila=3):
     fila_actual = []
 
     for team_key, team_data in Config.EQUIPOS_CONFIG.items():
-        if team_key == "General":
-            continue  # Omitir "General"
-        if team_key == "Admin":
-            continue  # Omitir "Admin"
+        if team_key in EQUIPOS_OMITIDOS:
+                continue
         texto = f"{team_data.get('emoji', '')} {team_data.get('display_name', team_key)}".strip()
 
         fila_actual.append(

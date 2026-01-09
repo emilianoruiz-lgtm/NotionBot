@@ -15,9 +15,9 @@ import Config
 # CONFIGURACIÓN Y CONSTANTES
 # ==========================================
 EQUIPOS_OMITIDOS = {
-    "Alpha Squad",
-    "Delta Force",
-    "Bravo Team",
+    "Caimanes",
+    "Huemules",
+    "Zorros",
     "General",
     "Admin"
 }

@@ -12,6 +12,14 @@ import Config
 
 ESPERANDO_LINK_NOTION = 801
 ESPERANDO_LINK_NOTION_DB = 801
+EQUIPOS_OMITIDOS = {
+    "Zorros",
+    "Huemules",
+    "Caimanes",
+    "General",
+    "Admin"
+}
+
 
 # ==========================================
 # UTILIDADES DE SISTEMA Y TIEMPO
@@ -182,10 +190,6 @@ def procesar_link_notion(url: str) -> dict:
         "tipo": tipo
     }
 
-
-
-
-
 # ==========================================
 # MENÚES TELEGRAM
 # ==========================================
@@ -226,7 +230,6 @@ async def notion_id_recibir_link(update: Config.Update, context: Config.Callback
 
     return Config.ConversationHandler.END
 
-
 conv_notion_id = Config.ConversationHandler(
     entry_points=[
         Config.CommandHandler("notion_id", notion_id_start)
@@ -243,9 +246,6 @@ conv_notion_id = Config.ConversationHandler(
         Config.CommandHandler("cancelar", Config.cancelar)
     ]
 )
-
-
-
 
 async def props_start(update: Config.Update, context: Config.CallbackContext):
     await update.message.reply_text(
@@ -286,8 +286,6 @@ async def props_recibir_link(update: Config.Update, context: Config.CallbackCont
 
     return Config.ConversationHandler.END
 
-
-
 conv_props = Config.ConversationHandler(
     entry_points=[
         Config.CommandHandler("props", props_start)
@@ -304,9 +302,6 @@ conv_props = Config.ConversationHandler(
         Config.CommandHandler("cancelar", Config.cancelar)
     ]
 )
-
-
-
 
 async def notion_users_start(update: Config.Update, context: Config.CallbackContext):
     try:
@@ -357,21 +352,70 @@ async def notion_users_start(update: Config.Update, context: Config.CallbackCont
     return Config.ConversationHandler.END
 
 
-
-
-
 # ==========================================
-# LÓGICA DE ARMADO DE AGENDA
+# MENSAJE INICIO GRUPO
 # ==========================================
+async def enviar_mensaje_equipo(
+    context: Config.CallbackContext,
+    equipo: str,
+    mensaje: str,
+    parse_mode=Config.ParseMode.HTML,
+    silent: bool = False
+) -> bool:
 
+    equipo_cfg = Config.EQUIPOS_CONFIG.get(equipo)
 
+    if not equipo_cfg:
+        print(f"[WARN] Equipo no configurado: {equipo}")
+        return False
 
+    chat_id = equipo_cfg.get("chat_id")
+    if not chat_id:
+        print(f"[WARN] Equipo sin chat_id: {equipo}")
+        return False
 
-# ============================
-# JOB AGENDA PRELIMINAR
-# ============================
+    header = f"{equipo_cfg.get('emoji', '')} <b>Bienvenidos a {equipo_cfg.get('display_name', equipo)}! 🫵🏻</b>\n\n"
 
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=header + mensaje,
+        parse_mode=parse_mode,
+        disable_notification=silent
+    )
 
-# ============================
-# JOB AGENDA AUTOMÁTICA
-# ============================
+    return True
+
+async def enviar_mensajes_a_equipos(context):
+    MENSAJES_POR_EQUIPO = {
+        "Alpha Squad": "🙍🏻‍♂️BOL🫱🏻‍🫲🏻LDL🙍🏻\n\n📍 Of. Cursos (Ex Caimanes)\n\n📚 Proyectos que se llevan: \n       - E128 OEE GATTI \n       - X433 PALE BLINKI \n       - X383 CEPILL. ITURROSPE",
+        "Delta Force":  "🙍🏻‍♂️FAC🫱🏻‍🫲🏻IDR🙍🏻\n\n📍 Of. Fondo (Ex Huemules)\n\n📚 Proyectos que se llevan: \n       - X457 PINOS MBA \n       - X386 PERF. JABALÍ \n       - X441 TERM. GERDAU L \n       - E189 GRÚA 1 TPR",
+        "Bravo Team":  "🙍🏻‍♂️LCR🫱🏻‍🫲🏻MAC🙍🏻\n\n📍 Of. Arriba (Ex Zorros)\n\n📚 Proyectos que se llevan: \n       - X432 CELDA CCU \n       - X393 QF0 GERDAU P",
+    }
+
+    for equipo in Config.EQUIPOS_CONFIG:
+        mensaje = (
+            f"{MENSAJES_POR_EQUIPO.get(equipo, '')}"
+        )
+
+        await enviar_mensaje_equipo(
+            context=context,
+            equipo=equipo,
+            mensaje=mensaje
+        )
+
+async def notificar_equipos(update: Config.Update, context: Config.CallbackContext):
+    await notificar_equipos(context)
+
+    await update.message.reply_text(
+        "✅ Mensajes enviados a todos los equipos"
+    )
+
+async def message_teams(
+    update: Config.Update,
+    context: Config.CallbackContext
+):
+    await enviar_mensajes_a_equipos(context)
+
+    await update.message.reply_text(
+        "✅ Mensajes enviados a todos los equipos"
+    )

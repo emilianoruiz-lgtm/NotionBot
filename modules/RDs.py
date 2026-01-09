@@ -10,7 +10,13 @@ import Config
 # CONFIGURACIÓN Y CONSTANTES
 # ==========================================
 
-
+EQUIPOS_OMITIDOS = {
+    "Caimanes",
+    "Huemules",
+    "Zorros",
+    "General",
+    "Admin"
+}
 
 # ==========================================
 # UTILIDADES DE SISTEMA Y TIEMPO
@@ -189,7 +195,7 @@ async def enviar_a_telegram(mensaje_html, equipo: str):
         thread_id = Config.THREAD_IDS.get(equipo)
         if not thread_id:
             print(f"⚠️ No se encontró thread_id para {equipo}, se enviará al chat principal.")
-            await bot.send_message(chat_id=Config.CHAT_ID, text=mensaje_html, parse_mode=Config.ParseMode.HTML)
+            await bot.send_message(chat_id=Config.CHAT_ID, text=mensaje_html, parse_mode=Config.ParseMode.HTML,disable_web_page_preview=True)
         else:
             await bot.send_message(
                 chat_id=Config.CHAT_ID,
@@ -229,7 +235,9 @@ async def RDs_comments(concatenado: bool = True):
         )
         registros = data.get('results', [])
 
-        for equipo in Config.EQUIPOS:
+        for equipo in Config.EQUIPOS_CONFIG:
+            if equipo in EQUIPOS_OMITIDOS:
+                continue
             print(f"\n= Revisando comentarios RD equipo {equipo} ({fecha_hoy}) =")
             equipo_tiene_comentarios = False  # Flag para saber si hay comentarios válidos
             comentarios_equipo = []
@@ -266,20 +274,20 @@ async def RDs_comments(concatenado: bool = True):
                 comentarios = await get_comments(session, registro['id'], users_map)
                 for contenido, autor in comentarios:
                     equipo_tiene_comentarios = True
-                    comentarios_equipo.append(f"{comentario_html}<b>{html.escape(autor)} comentó:</b>\n{contenido}")
+                    comentarios_equipo.append(f"{comentario_html}<b>{Config.html.escape(autor)} comentó:</b>\n{contenido}")
 
             # Genero el mensaje para el equipo
-            emoji = Config.EMOJIS.get(equipo.capitalize(), "❓")
+
             if equipo_tiene_comentarios:
                 mensaje = (
                     f"--------------------------------------------------------\n"
-                    f"📌 Comentarios <b>{equipo.capitalize()} {emoji}</b>\n"
+                    f"📢 Comentarios <b>{equipo.capitalize()}</b>\n"
                     + "\n\n".join(comentarios_equipo)
                 )
             else:
                 mensaje = (
                     f"--------------------------------------------------------\n"
-                    f"📌 Comentarios <b>{equipo.capitalize()} {emoji}</b>\n"
+                    f"📢 Comentarios <b>{equipo.capitalize()}</b>\n"
                     f"⚠️ Ningún miembro del equipo posteó un comentario de reunión diaria hoy."
                 )
 
